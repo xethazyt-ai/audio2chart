@@ -1,163 +1,116 @@
 import re
-import timeit
 
-DIFFICULTIES = ['Expert', 'Hard', 'Medium', 'Easy']
-INSTRUMENTS = ['Single', 'Drums']
 
-class ChartProcessor():
+DIFFICULTIES = ["Expert", "Hard", "Medium", "Easy"]
+# Clone Hero section suffixes.  Single and Drums remain the defaults used by the
+# training pipeline; the additional names only broaden what the parser accepts.
+INSTRUMENTS = [
+    "Single", "DoubleGuitar", "DoubleBass", "Rhythm", "Keyboard", "Keys",
+    "Drums", "GHLGuitar", "GHLBass", "GHLRhythm", "GHLCoop",
+]
+
+_SECTION = re.compile(
+    r"(?ms)^\s*\[([^\]\r\n]+)\]\s*\{(.*?)^\s*\}"
+)
+_SYNC_EVENT = re.compile(r"(\d+)\s*=\s*B\s*(\d+)")
+_NOTE_EVENT = re.compile(r"(\d+)\s*=\s*(N|S)\s*(\d+)\s*(\d+)")
+_METADATA = re.compile(r'(Resolution|Offset|Genre)\s*=\s*"?([^"\r\n]+?)"?\s*$')
+
+
+def _as_list(value):
+    if isinstance(value, str):
+        return [value]
+    return list(value)
+
+
+class ChartProcessor:
     def __init__(self, difficulties, instruments):
-        
-        if not isinstance(difficulties, list):
-            difficulties = [difficulties]
-
-        assert (all(element in DIFFICULTIES for element in difficulties))
-        assert (all(element in INSTRUMENTS for element in instruments))
+        difficulties = _as_list(difficulties)
+        instruments = _as_list(instruments)
+        if not all(value in DIFFICULTIES for value in difficulties):
+            raise AssertionError(f"difficulties must be chosen from {DIFFICULTIES}")
+        if not all(value in INSTRUMENTS for value in instruments):
+            raise AssertionError(f"instruments must be chosen from {INSTRUMENTS}")
 
         self.difficulties = difficulties
         self.instruments = instruments
-
-        self.sections = []
-        for inst in self.instruments:
-            for diff in self.difficulties:
-                self.sections.append(diff+inst)
-        self.sections.extend(['Song', 'SyncTrack'])
-
-        # Build regexes to match chart sections
+        self.sections = [
+            difficulty + instrument
+            for instrument in instruments
+            for difficulty in difficulties
+        ] + ["Song", "SyncTrack"]
+        # Kept for callers that inspected these public attributes.
         self.regexes = {
-            name: re.compile(rf'\[{name}\]\s*\{{(.*?)\}}', re.DOTALL)
+            name: re.compile(rf"\[{re.escape(name)}\]\s*\{{(.*?)\}}", re.DOTALL)
             for name in self.sections
         }
-
-        #self.regexes = {
-        #    name: re.compile(rf'\[{name}\]\s*\{{(.*)\}}', re.DOTALL)
-        #    for name in self.sections
-        #}
-
-        self.regex_metadata = r'(Resolution|Offset|Genre)\s*=\s*"?([^"\n]+)"?'
-        #self.regex_metadata = r'(Resolution|Offset|Genre)\s*=\s*"?([^"\n]+?)"?'
+        self.regex_metadata = _METADATA.pattern
 
     def open_chart(self, chart_path, chart_text=None):
-
-        if chart_text:
+        if chart_text is not None:
             self.chart_text = chart_text
         else:
-            with open(chart_path, 'r', encoding='utf-8-sig') as f:
-                self.chart_text = f.read()
+            with open(chart_path, "r", encoding="utf-8-sig") as chart_file:
+                self.chart_text = chart_file.read()
+        self.synctrack = []
+        self.notes = {}
+        self.song_metadata = None
 
-        self.synctrack = []             #Store SyncTrack events: (tick,BPM)
-        self.notes = {}                 #Store note events for section: {"section": List[(tick,N,lane,length)]}
-        self.song_metadata = None       #Store Song section
-        
+    def _scan_sections(self):
+        """Scan the chart once using one reusable section pattern."""
+        for match in _SECTION.finditer(self.chart_text):
+            yield match.group(1).strip(), match.group(2).strip()
+
     def extract_sections(self):
-        # Extracts raw content from each [SectionName] { ... } using defined regexes
+        return self.extract_sections2()
 
-        section_content = {}
-        for name, pattern in self.regexes.items():
-            match = pattern.search(self.chart_text)
-            if match:
-                section_content[name] = match.group(1).strip()
-        return section_content
-    
     def extract_sections2(self, target_sections=None):
-        section_content = {}
-        
-        if target_sections:
-            if not isinstance(target_sections, list):
-                target_sections = [target_sections]
-        else:
-            target_sections = self.sections
+        selected = self.sections if target_sections is None else _as_list(target_sections)
+        # Metadata and timing are required to interpret any requested note section.
+        selected = set(selected) | {"Song", "SyncTrack"}
+        return {
+            name: content
+            for name, content in self._scan_sections()
+            if name in selected
+        }
 
-        for section_name in self.sections:
-            # Find the section header
-            header_pattern = rf'\[{re.escape(section_name)}\]\s*\{{'
-            header_match = re.search(header_pattern, self.chart_text)
-            
-            if not header_match:
-                continue
-            
-            # Start after the opening brace
-            start_pos = header_match.end() - 1  # Position of opening brace
-            brace_count = 0
-            pos = start_pos
-            
-            # Count braces to find the matching closing brace
-            while pos < len(self.chart_text):
-                char = self.chart_text[pos]
-                
-                if char == '{':
-                    brace_count += 1
-                elif char == '}':
-                    brace_count -= 1
-                    
-                    if brace_count == 0:  # Found matching closing brace
-                        content = self.chart_text[start_pos + 1:pos]
-                        section_content[section_name] = content.strip()
-                        break
-                
-                pos += 1
-        
-        return section_content
-    
+    @staticmethod
+    def _parse_sync_track(content):
+        events = []
+        for line in content.splitlines():
+            match = _SYNC_EVENT.match(line.strip())
+            if match:
+                events.append((int(match.group(1)), int(match.group(2))))
+        return events
+
+    @staticmethod
+    def _parse_metadata(content):
+        metadata = {}
+        for line in content.splitlines():
+            match = _METADATA.search(line.strip())
+            if match:
+                metadata[match.group(1)] = match.group(2).strip()
+        return metadata
+
+    @staticmethod
+    def _parse_notes(content):
+        notes = []
+        for line in content.splitlines():
+            match = _NOTE_EVENT.match(line.strip())
+            if match:
+                notes.append((int(match.group(1)), match.group(2),
+                              int(match.group(3)), int(match.group(4))))
+        return notes
+
     def read_chart(self, chart_path, chart_text=None, target_sections=None):
-        
         self.open_chart(chart_path, chart_text=chart_text)
-
-        # === Read sections === target sections reads only the target sections
         sections = self.extract_sections2(target_sections=target_sections)
-
-        # === Parse SyncTrack BPMs ===
         if "SyncTrack" in sections:
-            for line in sections["SyncTrack"].splitlines():
-                line = line.strip()
-                match = re.match(r"(\d+)\s*=\s*B\s*(\d+)", line)
-                if match:
-                    tick = int(match.group(1))
-                    bpm = int(match.group(2))
-                    self.synctrack.append((tick, bpm))
-        
-        # === Parse [Song] metadata ===
+            self.synctrack = self._parse_sync_track(sections["SyncTrack"])
         if "Song" in sections:
-            #print('SOOONG: ', sections["Song"])
-            #self.song_metadata = sections["Song"].splitlines()
-            self.song_metadata = {match[0]: match[1] for match in re.findall(self.regex_metadata, sections["Song"])}
-
-
-        # === Parse notes in other sections ===
-        note_pattern = re.compile(r"(\d+)\s*=\s*(N|S)\s*(\d+)\s*(\d+)")
-
-        for name, content in sections.items():
-            if name == "SyncTrack" or name == "Song":
-                continue
-            self.notes[name] = []
-            for line in content.splitlines():
-                line = line.strip()
-                match = note_pattern.match(line)
-                if match:
-                    tick = int(match.group(1))
-                    note_type = match.group(2)  # "N" or "S"
-                    lane = int(match.group(3))
-                    length = int(match.group(4))
-                    self.notes[name].append((tick, note_type, lane, length))
-
-        #print("DEBUG: sections keys:", list(sections.keys()))
-        #print("DEBUG: sections['Song'] exists:", "Song" in sections)
-
-        #if "Song" in sections:
-        #    print("DEBUG: sections['Song'] content:")
-        #    print(repr(sections["Song"]))  # repr() will show hidden chars
-        #    print("DEBUG: sections['Song'] length:", len(sections["Song"]))
-        #    print("DEBUG: First 200 chars:", sections["Song"][:200])
-        #else:
-        #    print("DEBUG: 'Song' section not found in sections!")
-        #    print("DEBUG: Available sections:", list(sections.keys()))
-
-
-if __name__ == "__main__":
-    
-    processor = ChartProcessor(['Expert', 'Medium', 'Easy'], ['Single', 'Drums'])
-
-    t1 = timeit.default_timer()
-    processor.read_chart('notes_full.chart')
-    t2 = timeit.default_timer()
-
-    print('Time processing chart: ', t2-t1)
+            self.song_metadata = self._parse_metadata(sections["Song"])
+        self.notes = {
+            name: self._parse_notes(content)
+            for name, content in sections.items()
+            if name not in {"Song", "SyncTrack"}
+        }

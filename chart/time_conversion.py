@@ -43,7 +43,7 @@ def preprocess_bpm_segments(bpm_events, resolution):
     return segments
 
 
-def tick_to_seconds(tick, bmp_segments, resolution):
+def tick_to_seconds(tick, bmp_segments, resolution, segment_ticks=None):
     """
     Convert a tick position to absolute time in seconds
     
@@ -59,7 +59,7 @@ def tick_to_seconds(tick, bmp_segments, resolution):
         raise ValueError("bmp_segments cannot be empty")
     
     # Find the appropriate BPM segment
-    ticks = [seg[0] for seg in bmp_segments]
+    ticks = segment_ticks if segment_ticks is not None else [seg[0] for seg in bmp_segments]
     idx = bisect.bisect_right(ticks, tick) - 1
     
     # Handle edge case where tick is before first BPM event
@@ -103,15 +103,16 @@ def convert_notes_to_seconds(notes, bpm_events, resolution, offset=0.0):
     )
     
     bmp_segments = preprocess_bpm_segments(bpm_events, resolution)
+    segment_ticks = [segment[0] for segment in bmp_segments]
     note_times = []
     
     for tick, note_idx, sustain, attr in notes:
         # Convert start tick to absolute time
-        start_sec = tick_to_seconds(tick, bmp_segments, resolution)
+        start_sec = tick_to_seconds(tick, bmp_segments, resolution, segment_ticks)
         
         # Convert sustain duration to time
         if sustain > 0:
-            end_sec = tick_to_seconds(tick + sustain, bmp_segments, resolution)
+            end_sec = tick_to_seconds(tick + sustain, bmp_segments, resolution, segment_ticks)
             duration = end_sec - start_sec
         else:
             duration = 0.0

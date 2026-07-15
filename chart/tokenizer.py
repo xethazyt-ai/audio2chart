@@ -13,7 +13,7 @@ class SimpleTokenizerGuitar():
 
         indices = [i for i in range(5)]
         if not exclude_open_chords:
-            indices = indices [7]
+            indices = indices + [7]
         all_combinations = []
         for r in range(1, len(indices) + 1):
             combos = list(itertools.combinations(indices, r))
@@ -25,6 +25,31 @@ class SimpleTokenizerGuitar():
         self.reverse_map = {v: k for k, v in self.mapping_noteseqs2int.items()}
 
 
+    def _normalize_lanes(self, lanes):
+        lanes = sorted(set(lanes))
+        if self.exclude_open_chords and len(lanes) > 1 and lanes[-1] == 7:
+            lanes.pop()
+        return lanes
+
+    def _append_encoded_group(self, output, tick, lanes, duration, is5, is6, is_power):
+        lanes = self._normalize_lanes(lanes)
+        if not lanes:
+            return
+        mapped = self.mapping_noteseqs2int.get(tuple(lanes))
+        if mapped is None:
+            raise ValueError(f"Unknown note sequence {lanes} at tick {tick}")
+        output.append((tick, mapped, duration, {
+            'is5': is5, 'is6': is6, 'isS': is_power,
+        }))
+
+    @staticmethod
+    def _power_intervals(note_list):
+        return sorted(
+            (tick, tick + duration)
+            for tick, note_type, _, duration in note_list
+            if note_type == 'S'
+        )
+
     def encode(self, note_list):
         encoded_notes = []
         last_tick = None
@@ -35,16 +60,15 @@ class SimpleTokenizerGuitar():
         has_is6 = False
 
         # Extract star power intervals from 'S' notes
-        power_intervals = []
-        for tick, note_type, lane, duration in note_list:
-            if note_type == 'S':
-                power_intervals.append((tick, tick + duration))
+        power_intervals = self._power_intervals(note_list)
+        power_index = 0
 
         def is_in_power(tick):
-            for start, end in power_intervals:
-                if start <= tick < end:
-                    return True
-            return False
+            nonlocal power_index
+            while power_index < len(power_intervals) and power_intervals[power_index][1] <= tick:
+                power_index += 1
+            return (power_index < len(power_intervals)
+                    and power_intervals[power_index][0] <= tick < power_intervals[power_index][1])
 
         for tick, note_type, lane, duration in note_list:
             if note_type == 'S':
@@ -55,20 +79,9 @@ class SimpleTokenizerGuitar():
                 # Handle mistake case, multiple identical notes at same tick (it happens with [3,3])
                 #if len(seq_notes) > 1 and len(set(seq_notes)) <= 1: #No perche potrebbe esserci [1,1,3], fix: sort(set()) -> in un tick puo solo esserci un tipo di nota
                 #    seq_notes = [seq_notes[0]]
-                seq_notes = sorted(set(seq_notes))
-                if self.exclude_open_chords:
-                    if len(seq_notes) > 1 and seq_notes[-1] == 7:
-                        seq_notes = seq_notes[:-1]
-                mapped = self.mapping_noteseqs2int.get(tuple(seq_notes), None)
-                if mapped is None:
-                    raise ValueError(f"Unknown note sequence {seq_notes} at tick {last_tick}")
-
-                attrs = {
-                    'is5': has_is5,
-                    'is6': has_is6,
-                    'isS': is_in_power(last_tick),
-                }
-                encoded_notes.append((last_tick, mapped, last_duration, attrs))
+                self._append_encoded_group(encoded_notes, last_tick, seq_notes,
+                                           last_duration, has_is5, has_is6,
+                                           is_in_power(last_tick))
 
                 # reset for new tick
                 seq_notes = []
@@ -94,20 +107,9 @@ class SimpleTokenizerGuitar():
         # Flush last group
         if last_tick is not None and seq_notes:
             # Handle mistake case, multiple identical notes at same tick (it happens with [3,3])
-            seq_notes = sorted(set(seq_notes))
-            if self.exclude_open_chords:
-                if len(seq_notes) > 1 and seq_notes[-1] == 7:
-                    seq_notes = seq_notes[:-1]
-            mapped = self.mapping_noteseqs2int.get(tuple(seq_notes), None)
-            if mapped is None:
-                raise ValueError(f"Unknown note sequence {seq_notes} at tick {last_tick}")
-
-            attrs = {
-                'is5': has_is5,
-                'is6': has_is6,
-                'isS': is_in_power(last_tick),
-            }
-            encoded_notes.append((last_tick, mapped, last_duration, attrs))
+            self._append_encoded_group(encoded_notes, last_tick, seq_notes,
+                                       last_duration, has_is5, has_is6,
+                                       is_in_power(last_tick))
 
         return encoded_notes
     

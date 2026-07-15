@@ -2,31 +2,17 @@ import torch.multiprocessing as mp
 mp.set_start_method('spawn', force=True)
 from transformers import AutoProcessor
 
-import time
-import logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='[%(asctime)s] [WORKER %(worker_id)s] %(levelname)s: %(message)s',
-    handlers=[logging.StreamHandler()]
-)
-logger = logging.getLogger(__name__)
-
 import os
 import random
-import warnings
-import threading
 import subprocess
 import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
-from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from typing import Dict, List, Optional, Tuple
 import platform
 
 
-import torch
 import torchaudio.transforms as T
-import random
 
 class MusicAugmenter:
     def __init__(self, sample_rate: int = 16000, augment: bool = True):
@@ -477,9 +463,7 @@ class ChunkedWaveformDataset(Dataset):
                             start_time=start_seconds
                         )
                 
-                diff = [-1] if not self.conditional else [
-                    mapped_diff for diff, mapped_diff in DIFF_MAPPING.items() if diff in item["difficulty"]
-                ]
+                diff = self._difficulty(item["difficulty"])
 
                 return {
                     "audio": chunk,
@@ -500,9 +484,7 @@ class ChunkedWaveformDataset(Dataset):
                 else:
                     note_times, note_values, note_durations = [], [], []
 
-                diff = [-1] if not self.conditional else [
-                    mapped_diff for diff, mapped_diff in DIFF_MAPPING.items() if diff in item["difficulty"]
-                ]
+                diff = self._difficulty(item["difficulty"])
 
                 return {
                     "audio": chunk,
@@ -522,6 +504,14 @@ class ChunkedWaveformDataset(Dataset):
                 "note_durations": [],
                 "cond_diff": [-1],
             }
+
+    def _difficulty(self, section):
+        if not self.conditional:
+            return [-1]
+        for difficulty, mapped in DIFF_MAPPING.items():
+            if section.startswith(difficulty):
+                return [mapped]
+        raise ValueError(f"Unknown difficulty section: {section}")
 
 
     def __len__(self):
@@ -750,6 +740,8 @@ class AudioChartCollator:
             conditional: bool = False, 
             is_discrete: bool = False,
             use_processor: bool = False,
+            processor_checkpoint: str = "facebook/encodec_24khz",
+            sample_rate: Optional[int] = None,
         ):
 
         self.bos_token = bos_token
@@ -758,7 +750,12 @@ class AudioChartCollator:
         self.max_length = max_length
         self.conditional = conditional
         if use_processor:
-            self.processor = AutoProcessor.from_pretrained("facebook/encodec_24khz")
+            self.processor = AutoProcessor.from_pretrained(processor_checkpoint)
+            if sample_rate is not None and self.processor.sampling_rate != sample_rate:
+                raise ValueError(
+                    f"Processor {processor_checkpoint} requires {self.processor.sampling_rate} Hz, "
+                    f"but the dataloader uses {sample_rate}"
+                )
         else:
             self.processor = None
 
@@ -800,7 +797,8 @@ def create_chunked_audio_chart_dataloader(
     augment: bool = False,
     is_discrete: bool = False,
     grid_ms: int =  20,
-    use_processor: bool = False
+    use_processor: bool = False,
+    processor_checkpoint: str = "facebook/encodec_24khz"
 ) -> Tuple[DataLoader, Dict]:
     """
     Set use_predecoded_raw=True and predecode files with ffmpeg beforehand.
@@ -826,7 +824,9 @@ def create_chunked_audio_chart_dataloader(
         max_length=max_length,
         conditional=conditional,
         is_discrete=is_discrete,
-        use_processor=use_processor
+        use_processor=use_processor,
+        processor_checkpoint=processor_checkpoint,
+        sample_rate=sample_rate,
     )
 
     dataset = ChunkedWaveformDataset(

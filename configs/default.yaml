@@ -25,6 +25,14 @@ max_epochs: 200
 gpus: 1
 precision: 'bf16'
 save_run: false
+train_num_pieces: 6
+val_num_pieces: 1
+val_batch_size: 64
+num_workers: 8
+log_every_n_steps: 10
+early_stopping_patience: 5
+gradient_clip_val: 1.0
+num_sanity_val_steps: 0
 
 
 #Wandb

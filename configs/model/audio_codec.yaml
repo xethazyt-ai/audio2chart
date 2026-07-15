@@ -7,6 +7,9 @@ sample_rate: 24000
 #Seanet encoder config
 encoder:
   _target_: modules.models.Encodec
+  checkpoint: facebook/encodec_24khz
+  bandwidth: 3.0
+  sample_rate: ${model.sample_rate}
 
 #Transformer Decocer config
 transformer:
@@ -25,4 +28,3 @@ transformer:
   conditional: false           # If true, expects class embeddings
 
   rope_base: 10000.0           # Base frequency (common: 10000)
-

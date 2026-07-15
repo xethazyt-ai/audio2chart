@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
-import inspect
 
 def swiglu(x, alpha: float = 1.702, limit: float = 7.0):
     x_glu, x_linear = x[..., ::2], x[..., 1::2]
@@ -330,7 +329,9 @@ class TransformerDecoderAudioConditioned(nn.Module):
             rope_base=10000.0, 
             conditional=False, 
             use_flash=False,
-            codebook_size=1024
+            codebook_size=1024,
+            audio_feature_dim=None,
+            num_audio_codebooks=4,
         ):
         super().__init__()
         
@@ -341,7 +342,15 @@ class TransformerDecoderAudioConditioned(nn.Module):
         
         # Token embedding and positional encoding
         self.token_embedding = nn.Embedding(vocab_size, d_model)
-        self.codes_embedding = nn.ModuleList(nn.Embedding(codebook_size, d_model) for _ in range(4))
+        self.codes_embedding = None
+        self.audio_projection = None
+        if audio_feature_dim is None:
+            self.codes_embedding = nn.ModuleList(
+                nn.Embedding(codebook_size, d_model)
+                for _ in range(num_audio_codebooks)
+            )
+        elif audio_feature_dim != d_model:
+            self.audio_projection = nn.Linear(audio_feature_dim, d_model, bias=False)
         self.conditional = conditional
         if self.conditional:
             self.cond_embedding = nn.Embedding(4, d_model)
@@ -413,7 +422,13 @@ class TransformerDecoderAudioConditioned(nn.Module):
             x = x + self.cond_embedding(class_ids)
 
         # Adapt audio codes        
-        input_audio = sum( self.codes_embedding[i](input_audio[:,i,:]) for i in range(4)) 
+        if self.codes_embedding is not None:
+            input_audio = sum(
+                self.codes_embedding[i](input_audio[:, i, :])
+                for i in range(len(self.codes_embedding))
+            )
+        elif self.audio_projection is not None:
+            input_audio = self.audio_projection(input_audio)
         input_audio = self.norm_audio(input_audio)
         if self.compression:
             input_audio = self.audio_compression(input_audio)

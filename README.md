@@ -10,6 +10,30 @@ A complete description of the methodology, architecture, and experiments can be 
 
 The repository provides a full codebase for both **training** and **inference**, including data processing pipelines, neural network architectures, and ready to use scripts for generating playable charts from real songs.
 
+## Tests and benchmarks
+
+Run the dependency-light chart, tokenizer, and timing suite with:
+
+```bash
+python -m unittest tests.test_chart_pipeline
+```
+
+After installing the pinned environment (`pip install -r requirements.txt`), run the full suite with:
+
+```bash
+python -m unittest discover -s tests -p 'test_*.py'
+```
+
+Dependency-heavy tests skip with a clear reason if the training stack is unavailable. Performance comparisons are kept separate from unit tests:
+
+```bash
+python tests/benchmark_chart_pipeline.py
+python tests/benchmark_chart_pipeline.py --json
+python tests/benchmark_chart_pipeline.py --max-ratio 1.25
+```
+
+The benchmark checks reference/refactored output equivalence before reporting median timing ratios for small, typical, and large synthetic charts. The optional `--max-ratio` makes it fail when any ratio exceeds the supplied threshold.
+
 
 ---
 
@@ -124,6 +148,14 @@ python baseline.py root_folder=<data_path> is_discrete=True window_seconds=30 gr
 ## Audio-Conditioned Model
 
 `main.py` is used to train or evaluate the audio-conditioned Transformer model that maps encoded audio features to chart tokens.
+
+The default uses frozen pretrained Encodec features. A trainable SEANet encoder can be selected through Hydra:
+
+```bash
+python main.py model=audio_discrete
+```
+
+Both encoder choices use the same discrete charting Lightning module. The chart-only autoregressive baseline remains available through `baseline.py`.
 
 The pretrained weights are provided on Hugging Face (see below), and inference is fully supported through `generate.py`.
 
