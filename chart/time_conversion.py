@@ -14,7 +14,7 @@ def preprocess_bpm_segments(bpm_events, resolution):
     if not bpm_events:
         raise ValueError("bpm_events cannot be empty")
     
-    # Sort events by tick just in case
+    # Charts are not required to order synchronization events.
     bpm_events = sorted(bpm_events)
     
     segments = []

@@ -1,7 +1,4 @@
-import torch.multiprocessing as mp
-mp.set_start_method('spawn', force=True)
-from transformers import AutoProcessor
-
+import logging
 import os
 import random
 import subprocess
@@ -12,157 +9,16 @@ from typing import Dict, List, Optional, Tuple
 import platform
 
 
-import torchaudio.transforms as T
-
-class MusicAugmenter:
-    def __init__(self, sample_rate: int = 16000, augment: bool = True):
-        self.sample_rate = sample_rate
-        self.augment = augment
-        self.pitch_shift = T.PitchShift(sample_rate=sample_rate, n_steps=0)
-        #self.eq_low = T.EqualizerBiquad(sample_rate=sample_rate, center_frequency=100, gain=0, q=1.0)
-        #self.eq_mid = T.EqualizerBiquad(sample_rate=sample_rate, center_frequency=1000, gain=0, q=1.0)
-        #self.eq_high = T.EqualizerBiquad(sample_rate=sample_rate, center_frequency=4000, gain=0, q=1.0)
-
-    def _apply_reverb(self, waveform: torch.Tensor) -> torch.Tensor:
-        if random.random() < 0.2:
-            ir = torch.zeros(int(0.5 * self.sample_rate))  # 0.5s at 16 kHz
-            ir[0] = 1.0
-            ir[-int(0.1 * self.sample_rate):] = torch.linspace(1.0, 0.0, int(0.1 * self.sample_rate)) * 0.2
-            waveform = torch.nn.functional.conv1d(waveform.unsqueeze(0), ir.unsqueeze(0).unsqueeze(-1)).squeeze(0)
-        return waveform
-
-    def _augment(self, waveform: torch.Tensor) -> torch.Tensor:
-        if not self.augment:
-            return waveform
-        augmentations = [
-            self._apply_gain,
-            self._apply_noise,
-            self._apply_pitch_shift,
-            #self._apply_eq,
-            #self._apply_reverb,
-            self._apply_polarity_inversion
-        ]
-        random.shuffle(augmentations)
-        num_augs = random.randint(0, 2)  # Apply 0–2 augmentations
-        for aug in augmentations[:num_augs]:
-            waveform = aug(waveform)
-        if waveform.abs().max() > 1.0:
-            waveform = waveform / waveform.abs().max()
-        return waveform
-
-    def _apply_gain(self, waveform: torch.Tensor) -> torch.Tensor:
-        if random.random() < 0.5:
-            gain_db = random.uniform(-10, 10)
-            waveform = waveform * (10 ** (gain_db / 20))
-        return waveform
-
-    def _apply_noise(self, waveform: torch.Tensor) -> torch.Tensor:
-        if random.random() < 0.3:
-            snr_db = random.uniform(30, 50)
-            signal_power = (waveform ** 2).mean()
-            noise = torch.randn_like(waveform)
-            noise_power = (noise ** 2).mean()
-            noise_amp = (signal_power / noise_power * 10 ** (-snr_db / 10)).sqrt()
-            waveform = waveform + noise * noise_amp
-        return waveform
-
-    def _apply_pitch_shift(self, waveform: torch.Tensor) -> torch.Tensor:
-        if random.random() < 0.4:
-            semitones = random.uniform(-2, 2)
-            self.pitch_shift.n_steps = semitones
-            waveform = self.pitch_shift(waveform)
-        return waveform
-
-    def _apply_eq(self, waveform: torch.Tensor) -> torch.Tensor:
-        if random.random() < 0.3:
-            self.eq_low.gain = random.uniform(-6, 6)
-            self.eq_mid.gain = random.uniform(-6, 6)
-            self.eq_high.gain = random.uniform(-6, 6)
-            waveform = self.eq_low(waveform)
-            waveform = self.eq_mid(waveform)
-            waveform = self.eq_high(waveform)
-        return waveform
-
-    def _apply_polarity_inversion(self, waveform: torch.Tensor) -> torch.Tensor:
-        if random.random() < 0.1:
-            waveform = -waveform
-        return waveform
-
-# --------------------
-# Constants
-# --------------------
-DIFF_MAPPING = {
-    'Expert': 0,
-    'Hard': 1,
-    'Medium': 2,
-    'Easy': 3
-}
-
-MAX_AUDIO_SAMPLES = 10 * 60 * 24000  # 10 minutes @ 24kHz
-MAX_BYTES = MAX_AUDIO_SAMPLES * 2    # 16-bit = 2 bytes per sample
-
-# --------------------
-# Audio loading (FFMPEG - FASTEST for .opus)
-# --------------------
-
-def load_opus_ffmpeg(path: str, target_sr: int = 16000, timeout_seconds: int = 10) -> Tuple[torch.Tensor, int]:
-    cmd = [
-        'ffmpeg',
-        '-i', path,
-        '-f', 's16le',
-        '-ar', str(target_sr),
-        '-ac', '1',
-        '-'
-    ]
-
-    try:
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            bufsize=10**8  # Large buffer to prevent pipe stalls
-        )
-
-        # Use communicate() with timeout — this is safer than run()
-        stdout, stderr = proc.communicate(timeout=timeout_seconds)
-
-        if proc.returncode != 0:
-            raise RuntimeError(f"FFMPEG failed with code {proc.returncode} for {path}: {stderr.decode()}")
-
-        audio_np = np.frombuffer(stdout, dtype=np.int16).astype(np.float32) / 32768.0
-        waveform = torch.from_numpy(audio_np).unsqueeze(0)
-        return waveform, target_sr
-
-    except subprocess.TimeoutExpired:
-        proc.kill()  # Explicitly kill if timeout
-        proc.wait()  # Wait for cleanup
-        raise RuntimeError(f"FFMPEG timed out after {timeout_seconds}s for {path}")
-
-    except Exception as e:
-        raise RuntimeError(f"Failed to load {path} with ffmpeg: {e}")
-
-def load_raw_audio(path: str, target_sr: int = 16000) -> Tuple[torch.Tensor, int]:
-    """
-    Load the ENTIRE pre-decoded raw 16-bit PCM audio (no header).
-    Must be preprocessed with ffmpeg: ffmpeg -i input.opus -f s16le -ar target_sr -ac 1 output.raw
-    Returns: [1, T] tensor, sample_rate
-    """
-    try:
-        with open(path, 'rb') as f:
-            file_size = os.path.getsize(path)
-            if file_size <= MAX_BYTES:
-                buf = f.read()
-            else:
-                # ONLY READ FIRST MAX_BYTES — skip rest, avoid long audio
-                buf = f.read(MAX_BYTES)
-        audio_np = np.frombuffer(buf, dtype=np.int16).astype(np.float32) / 32768.0
-        waveform = torch.from_numpy(audio_np).unsqueeze(0)  # [1, T]
-        return waveform, target_sr
-    except Exception as e:
-        raise RuntimeError(f"Failed to load raw audio {path}: {e}")
-
+from transformers import AutoProcessor
 
 from chart.chart_processor import ChartProcessor
+from dataloader.audio_io import MusicAugmenter, load_opus_ffmpeg, load_raw_audio
+
+
+logger = logging.getLogger(__name__)
+ERROR_POLICIES = {"strict", "skip"}
+
+DIFF_MAPPING = {"Expert": 0, "Hard": 1, "Medium": 2, "Easy": 3}
 
 
 # --------------------
@@ -178,8 +34,8 @@ class ChunkedWaveformDataset(Dataset):
         pad_token: int,
         tokenizer,
         max_length: int = 256,
-        difficulties: List[str] = ['Expert'],
-        instruments: List[str] = ['Single'],
+        difficulties: Optional[List[str]] = None,
+        instruments: Optional[List[str]] = None,
         window_seconds: float = 10.0,
         sample_rate: int = 16000,
         num_pieces: int = 1,
@@ -194,7 +50,9 @@ class ChunkedWaveformDataset(Dataset):
         decode_to_raw_on_init: bool = False,     
         raw_dir: str = "raw_audio",              # where to store when converting
         is_discrete: bool = False,
-        grid_ms: int = 20
+        grid_ms: int = 20,
+        error_policy: str = "strict",
+        max_sample_retries: int = 5,
     ):
         self.data = data
         self.bos_token = bos_token
@@ -202,8 +60,16 @@ class ChunkedWaveformDataset(Dataset):
         self.pad_token = pad_token
         self.tokenizer = tokenizer
         self.max_length = max_length
-        self.difficulties = difficulties
-        self.instruments = instruments
+        if not data:
+            raise ValueError("Audio dataset cannot be empty")
+        if error_policy not in ERROR_POLICIES:
+            raise ValueError(f"error_policy must be one of {sorted(ERROR_POLICIES)}")
+        if max_sample_retries < 0:
+            raise ValueError("max_sample_retries must be non-negative")
+        self.difficulties = difficulties or ["Expert"]
+        self.instruments = instruments or ["Single"]
+        self.error_policy = error_policy
+        self.max_sample_retries = max_sample_retries
         self.window_seconds = window_seconds
         self.sample_rate = sample_rate
         self.num_samples = int(sample_rate * window_seconds)
@@ -220,12 +86,12 @@ class ChunkedWaveformDataset(Dataset):
         self.is_discrete = is_discrete
         self.grid_ms = grid_ms
 
-        self.chart_processor = ChartProcessor(difficulties, instruments)
-        self.music_augmenter = MusicAugmenter(augment=augment, sample_rate=self.sample_rate)
+        self.chart_processor = ChartProcessor(self.difficulties, self.instruments)
+        self.music_augmenter = MusicAugmenter(enabled=augment, sample_rate=self.sample_rate)
 
         # Pre-cache chart data
         self.chart_cache: Dict[Tuple[str, str], Tuple[List, List, int, float]] = {}
-        print("[INFO] Pre-caching chart metadata...")
+        logger.info("Pre-caching chart metadata")
         for item in data:
             key = (item["chart_path"], item["difficulty"])
             if key not in self.chart_cache:
@@ -236,19 +102,21 @@ class ChunkedWaveformDataset(Dataset):
                     resolution = int(self.chart_processor.song_metadata['Resolution'])
                     offset = float(self.chart_processor.song_metadata['Offset'])
                     self.chart_cache[key] = (notes, bpm_events, resolution, offset)
-                except Exception as e:
-                    print(f"[WARNING] Failed to cache chart {key}: {e}")
-                    self.chart_cache[key] = None  # mark as bad
+                except (KeyError, OSError, TypeError, ValueError) as e:
+                    if self.error_policy == "strict":
+                        raise RuntimeError(f"Failed to cache chart {key}") from e
+                    logger.warning("Skipping invalid chart %s: %s", key, e)
+                    self.chart_cache[key] = None
 
         # If auto-converting .opus to .raw
         if self.decode_to_raw_on_init and not os.path.exists(self.raw_dir):
             os.makedirs(self.raw_dir, exist_ok=True)
-            print(f"[INFO] Converting all .opus files to .raw in {self.raw_dir} (this may take time)...")
+            logger.info("Converting Opus files to raw audio in %s", self.raw_dir)
             self._convert_all_to_raw()
 
         # Precompute windows if enabled
         if self.precomputed_windows:
-            print("[INFO] Precomputing fixed audio windows...")
+            logger.info("Precomputing fixed audio windows")
             self.audio_windows = []  # list of (item_idx, start_sample, end_sample)
             for idx, item in enumerate(data):
                 audio_path = item["audio_path"]
@@ -262,14 +130,18 @@ class ChunkedWaveformDataset(Dataset):
                     try:
                         waveform, _ = load_opus_ffmpeg(audio_path, sample_rate, timeout_seconds=30)
                         total_samples = waveform.shape[-1]
-                    except:
-                        total_samples = 16000 * 120  # fallback: 2 min
+                    except (RuntimeError, OSError) as error:
+                        if self.error_policy == "strict":
+                            raise
+                        logger.warning("Cannot inspect %s: %s", audio_path, error)
+                        continue
                 num_windows = max(1, total_samples // self.num_samples)
                 for i in range(num_windows):
                     start = i * self.num_samples
                     end = min(start + self.num_samples, total_samples)
-                    self.audio_windows.append((idx, start, end))
-            print(f"[INFO] Precomputed {len(self.audio_windows)} windows.")
+                    window_key = item["raw_path"] if self.use_predecoded_raw else item["audio_path"]
+                    self.audio_windows.append((window_key, start, end))
+            logger.info("Precomputed %d windows", len(self.audio_windows))
 
         # Build flat item list (chunked + repeated)
         if chunk_size is None:
@@ -295,7 +167,7 @@ class ChunkedWaveformDataset(Dataset):
         self._audio_cache = {}
         self._current_chunk_id = None
 
-        print(f"[INFO] Dataset initialized with {len(self.items)} items, chunk_size={chunk_size}, workers will reuse cache.")
+        logger.info("Dataset initialized with %d items and chunk size %d", len(self.items), chunk_size)
 
     def _convert_all_to_raw(self):
         """Convert all .opus files to .raw in background (one-time setup)"""
@@ -320,10 +192,10 @@ class ChunkedWaveformDataset(Dataset):
                 # Update item to point to raw
                 item["audio_path"] = raw_path
                 item["length_samples"] = int(self.sample_rate * 120)  # safe estimate
-            except Exception as e:
-                print(f"[ERROR] Failed to convert {opus_path} to raw: {e}")
+            except (OSError, subprocess.SubprocessError) as e:
+                logger.error("Failed to convert %s to raw audio: %s", opus_path, e)
 
-        with ThreadPoolExecutor(max_workers=min(8, os.cpu_count())) as executor:
+        with ThreadPoolExecutor(max_workers=min(8, os.cpu_count() or 1)) as executor:
             list(executor.map(convert_single, self.data))
 
     def _estimate_chunk_size(self, sample_n=3):
@@ -337,7 +209,7 @@ class ChunkedWaveformDataset(Dataset):
                     waveform, _ = load_opus_ffmpeg(item["audio_path"], self.sample_rate, timeout_seconds=30)
                     size_bytes = waveform.element_size() * waveform.numel()
                 sizes.append(size_bytes)
-            except:
+            except (RuntimeError, OSError):
                 sizes.append(100 * 1024 * 1024)  # 100MB fallback
         avg_size = np.mean(sizes) if sizes else 100 * 1024 * 1024
         max_bytes = self.max_cache_gb * (1024 ** 3)
@@ -365,41 +237,22 @@ class ChunkedWaveformDataset(Dataset):
         if audio_path in self._audio_cache:
             return self._audio_cache[audio_path]
         
-        # DEBUG
-        #worker_id = self._get_worker_id()
-        #start_time = time.time()
-        # Log every load attempt
-        #logger.info(f"Loading audio: {audio_path} (worker={worker_id})", extra={'worker_id': worker_id})
-
-
         try:
             if self.use_predecoded_raw:
                 # Must have 'length_samples' in item metadata
                 waveform, sr = load_raw_audio(audio_path, self.sample_rate)  # load longer buffer
             else:
                 waveform, sr = load_opus_ffmpeg(audio_path, self.sample_rate, timeout_seconds=20)
-
-
-            # DEBUG
-            #duration = time.time() - start_time
-            #sample_count = waveform.shape[-1]
-            #logger.info(
-            #    f"✅ Loaded {os.path.basename(audio_path)} in {duration:.3f}s "
-            #    f"({sample_count} samples)",
-            #    extra={'worker_id': worker_id}
-            #)
-
-            #if len(self._audio_cache) < self.chunk_size * 2:
-            #    self._audio_cache[audio_path] = (waveform, sr)
             return waveform, sr
 
-        except Exception as e:
-            print(f"Worker {self._get_worker_id()}: Failed to load {audio_path}: {e}")
-            return torch.zeros(1, self.num_samples), self.sample_rate
+        except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+            raise RuntimeError(
+                f"Worker {self._get_worker_id()} failed to load {audio_path}"
+            ) from error
 
 
     def _augment(self, waveform):
-        return self.music_augmenter._augment(waveform)
+        return self.music_augmenter(waveform)
 
     def _process_window(self, waveform: torch.Tensor, item: Dict, start_sample: int, end_sample: int) -> Dict:
 
@@ -415,11 +268,12 @@ class ChunkedWaveformDataset(Dataset):
             pad_amount = self.num_samples - actual_len
             chunk = torch.nn.functional.pad(chunk, (0, pad_amount), mode='constant', value=0.0)
         elif actual_len > self.num_samples:
-            # Shouldn't happen due to max_start logic, but just in case
+            # Enforce the public fixed-window invariant.
             chunk = chunk[:, :self.num_samples]
 
         # Chunk is guaranteed to be [1, self.num_samples]
-        assert chunk.shape[-1] == self.num_samples, f"Chunk shape {chunk.shape} != {self.num_samples}"
+        if chunk.shape[-1] != self.num_samples:
+            raise RuntimeError(f"Chunk shape {chunk.shape} does not match {self.num_samples}")
 
         if self.augment:
             chunk = chunk.clone()  # only clone when augmenting
@@ -457,7 +311,7 @@ class ChunkedWaveformDataset(Dataset):
                 grid = self.tokenizer.discretize_time(
                             time_list, 
                             tokens_list, 
-                            self.pad_token, #change this if starting using non equal length discretized seqs
+                            self.pad_token,
                             grid_ms=self.grid_ms, 
                             window_seconds=self.window_seconds,
                             start_time=start_seconds
@@ -494,16 +348,8 @@ class ChunkedWaveformDataset(Dataset):
                     "cond_diff": diff,
                 }
 
-        except Exception as e:
-            print(f"Worker {self._get_worker_id()}: Chart processing failed: {e}")
-            # Still return fixed-size audio tensor
-            return {
-                "audio": chunk,  # Already padded to [1, self.num_samples]
-                "note_times": [],
-                "note_values": [],
-                "note_durations": [],
-                "cond_diff": [-1],
-            }
+        except (KeyError, TypeError, ValueError) as error:
+            raise RuntimeError("Chart window processing failed") from error
 
     def _difficulty(self, section):
         if not self.conditional:
@@ -518,7 +364,7 @@ class ChunkedWaveformDataset(Dataset):
         return len(self.items)
 
     def __getitem__(self, idx: int) -> List[Dict]:
-        max_attempts = 5
+        max_attempts = 1 if self.error_policy == "strict" else self.max_sample_retries + 1
         for attempt in range(max_attempts):
             try:
                 current_idx = idx if attempt == 0 else random.randint(0, len(self.items) - 1)
@@ -527,7 +373,8 @@ class ChunkedWaveformDataset(Dataset):
                 self._should_clear_cache(chunk_id)
 
                 # Load audio
-                waveform, sr = self._load_audio_file(item["raw_path"])
+                audio_path = item["raw_path"] if self.use_predecoded_raw else item["audio_path"]
+                waveform, sr = self._load_audio_file(audio_path)
 
                 if waveform.shape[0] > 1:
                     waveform = waveform.mean(dim=0, keepdim=True)
@@ -546,7 +393,10 @@ class ChunkedWaveformDataset(Dataset):
                     try:
                         if self.precomputed_windows:
                             # Pick a random precomputed window belonging to this item
-                            item_windows = [w for w in self.audio_windows if w[0] == self.items[current_idx][0]]
+                            item_windows = [
+                                window for window in self.audio_windows
+                                if window[0] == audio_path
+                            ]
                             if not item_windows:
                                 raise RuntimeError(f"No windows found for item {item}")
                             _, start_sample, end_sample = random.choice(item_windows)
@@ -563,32 +413,22 @@ class ChunkedWaveformDataset(Dataset):
 
                         result = self._process_window(waveform, item, start_sample, end_sample)
                         results.append(result)
-                    except Exception as e:
-                        print(f"Worker {self._get_worker_id()}: Window processing failed: {e}")
-                        results.append({
-                            "audio": torch.zeros(1, self.num_samples),
-                            "note_times": [],
-                            "note_values": [],
-                            "note_durations": [],
-                            "cond_diff": [-1],
-                        })
+                    except (KeyError, RuntimeError, TypeError, ValueError) as error:
+                        raise RuntimeError(
+                            f"Worker {self._get_worker_id()} failed to process a window"
+                        ) from error
                 return results
 
-            except Exception as e:
-                if attempt == 0:
-                    print(f"Worker {self._get_worker_id()}: __getitem__({current_idx}) failed: {e}")
+            except (KeyError, OSError, RuntimeError, TypeError, ValueError) as error:
+                logger.warning(
+                    "Worker %d failed dataset item %d (attempt %d/%d): %s",
+                    self._get_worker_id(), current_idx, attempt + 1, max_attempts, error,
+                )
                 if attempt < max_attempts - 1:
                     continue
-
-        print(f"Worker {self._get_worker_id()}: All {max_attempts} attempts failed for idx {idx}")
-        empty_result = {
-            "audio": torch.zeros(1, self.num_samples),
-            "note_times": [],
-            "note_values": [],
-            "note_durations": [],
-            "cond_diff": [-1],
-        }
-        return [empty_result] * self.num_pieces
+                raise RuntimeError(
+                    f"Dataset item {idx} failed after {max_attempts} attempt(s)"
+                ) from error
 
 
 # --------------------
@@ -779,8 +619,8 @@ def create_chunked_audio_chart_dataloader(
     tokenizer,
     window_seconds: float = 10.0,
     sample_rate: int = 16000,
-    difficulties: List[str] = ['Expert'],
-    instruments: List[str] = ['Single'],
+    difficulties: Optional[List[str]] = None,
+    instruments: Optional[List[str]] = None,
     batch_size: int = 32,
     max_length: int = 512,
     num_workers: int = 8,
@@ -798,7 +638,9 @@ def create_chunked_audio_chart_dataloader(
     is_discrete: bool = False,
     grid_ms: int =  20,
     use_processor: bool = False,
-    processor_checkpoint: str = "facebook/encodec_24khz"
+    processor_checkpoint: str = "facebook/encodec_24khz",
+    error_policy: str = "strict",
+    max_sample_retries: int = 5,
 ) -> Tuple[DataLoader, Dict]:
     """
     Set use_predecoded_raw=True and predecode files with ffmpeg beforehand.
@@ -835,8 +677,8 @@ def create_chunked_audio_chart_dataloader(
         eos_token=vocab['<eos>'],
         pad_token=vocab['<PAD>'],
         tokenizer=tokenizer,
-        difficulties=difficulties,
-        instruments=instruments,
+        difficulties=difficulties or ["Expert"],
+        instruments=instruments or ["Single"],
         window_seconds=window_seconds,
         sample_rate=sample_rate,
         num_pieces=num_pieces,
@@ -851,65 +693,28 @@ def create_chunked_audio_chart_dataloader(
         decode_to_raw_on_init=decode_to_raw_on_init,
         raw_dir=raw_dir,
         is_discrete=is_discrete,
-        grid_ms=grid_ms
+        grid_ms=grid_ms,
+        error_policy=error_policy,
+        max_sample_retries=max_sample_retries,
     )
 
-    print(f"[INFO] Total items: {len(dataset)}, chunk_size={dataset.chunk_size}, workers={num_workers}")
+    logger.info("Created dataset with %d items", len(dataset))
 
+    available_cpus = os.cpu_count() or 1
+    effective_workers = min(num_workers, max(1, available_cpus // 2))
     dataloader = DataLoader(
         dataset,
         batch_size=batch_size,
-        shuffle=True,
-        num_workers=min(num_workers, os.cpu_count() // 2),
+        shuffle=shuffle_chunks,
+        num_workers=effective_workers,
         pin_memory=True,
         collate_fn=collator,
-        drop_last=True,
-        persistent_workers=True if num_workers > 0 else False,
-        prefetch_factor=4 if num_workers > 0 else None,
-        timeout=60,
-        multiprocessing_context='spawn' if platform.system() == 'Windows' else None,
+        drop_last=shuffle_chunks,
+        persistent_workers=effective_workers > 0,
+        prefetch_factor=4 if effective_workers > 0 else None,
+        timeout=60 if effective_workers > 0 else 0,
+        multiprocessing_context=(
+            "spawn" if platform.system() == "Windows" and effective_workers > 0 else None
+        ),
     )
     return dataloader, vocab
-
-
-# --------------------
-# CLI Utility: Pre-decode all .opus to .raw (run separately)
-# --------------------
-
-if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser(description="Pre-decode .opus files to .raw for faster loading.")
-    parser.add_argument("--input-dir", type=str, required=True, help="Directory containing .opus files")
-    parser.add_argument("--output-dir", type=str, default="raw_audio", help="Output directory for .raw files")
-    parser.add_argument("--sr", type=int, default=16000, help="Sample rate (default: 16000)")
-    parser.add_argument("--workers", type=int, default=8, help="Number of parallel processes")
-    args = parser.parse_args()
-
-    os.makedirs(args.output_dir, exist_ok=True)
-    opus_files = [f for f in os.listdir(args.input_dir) if f.endswith('.opus')]
-    print(f"Found {len(opus_files)} .opus files to convert...")
-
-    def convert_one(f):
-        src = os.path.join(args.input_dir, f)
-        dst = os.path.join(args.output_dir, f.replace('.opus', '.raw'))
-        if os.path.exists(dst):
-            return
-        cmd = [
-            'ffmpeg',
-            '-i', src,
-            '-f', 's16le',
-            '-ar', str(args.sr),
-            '-ac', '1',
-            dst
-        ]
-        try:
-            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
-            print(f"✓ {f}")
-        except Exception as e:
-            print(f"✗ {f}: {e}")
-
-    from concurrent.futures import ProcessPoolExecutor
-    with ProcessPoolExecutor(max_workers=args.workers) as executor:
-        list(executor.map(convert_one, opus_files))
-
-    print(f"Conversion complete. Output: {args.output_dir}")

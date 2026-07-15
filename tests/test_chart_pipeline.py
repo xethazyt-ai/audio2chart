@@ -56,6 +56,13 @@ class TokenizerTests(unittest.TestCase):
         encoded = tokenizer.encode(self.notes)
         self.assertEqual(tokenizer.encode(tokenizer.decode(encoded)), encoded)
 
+    def test_discretization_validates_grid_arguments(self):
+        tokenizer = SimpleTokenizerGuitar()
+        with self.assertRaises(TypeError):
+            tokenizer.discretize_time([], [], "pad", 20, 1)
+        with self.assertRaises(ValueError):
+            tokenizer.discretize_time([], [], 0, 30, 1)
+
 
 class TimingTests(unittest.TestCase):
     def test_bpm_change_and_sustain(self):

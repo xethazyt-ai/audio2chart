@@ -8,13 +8,14 @@ defaults:
 optimizer:
   lr_audio: 1e-3
 
-data_split_folder: null
-window_seconds: 30
+data:
+  window_seconds: 30
+  grid_ms: 20
 
-is_discrete: true
-grid_ms: 20
-augment: false
+loader:
+  augment: false
 
 seed: 42
 
-tags: [audio]
+tracking:
+  tags: [audio]

@@ -1,7 +1,6 @@
 import itertools
+import math
 from chart.time_conversion import convert_notes_to_seconds
-from chart.chart_processor import ChartProcessor
-import timeit
 
 
 class SimpleTokenizerGuitar():
@@ -76,9 +75,7 @@ class SimpleTokenizerGuitar():
 
             # If we changed tick, output previous group first
             if last_tick is not None and tick != last_tick:
-                # Handle mistake case, multiple identical notes at same tick (it happens with [3,3])
-                #if len(seq_notes) > 1 and len(set(seq_notes)) <= 1: #No perche potrebbe esserci [1,1,3], fix: sort(set()) -> in un tick puo solo esserci un tipo di nota
-                #    seq_notes = [seq_notes[0]]
+                # Clone Hero charts may contain duplicate lanes at one tick.
                 self._append_encoded_group(encoded_notes, last_tick, seq_notes,
                                            last_duration, has_is5, has_is6,
                                            is_in_power(last_tick))
@@ -106,7 +103,7 @@ class SimpleTokenizerGuitar():
 
         # Flush last group
         if last_tick is not None and seq_notes:
-            # Handle mistake case, multiple identical notes at same tick (it happens with [3,3])
+            # Clone Hero charts may contain duplicate lanes at one tick.
             self._append_encoded_group(encoded_notes, last_tick, seq_notes,
                                        last_duration, has_is5, has_is6,
                                        is_in_power(last_tick))
@@ -179,12 +176,17 @@ class SimpleTokenizerGuitar():
         are ignored/clipped as needed.
         """
 
-        assert isinstance(pad_token_id, int), 'Pad token id must be an int'
+        if not isinstance(pad_token_id, int):
+            raise TypeError("pad_token_id must be an integer")
+        if grid_ms <= 0 or window_seconds <= 0:
+            raise ValueError("grid_ms and window_seconds must be positive")
         if len(tokens_list) != len(time_list):
             raise ValueError("tokens and times_sec must have the same length")
 
         grid_s = grid_ms / 1000.0
-        assert int(window_seconds%grid_s)==0 , 'Time window must be multiple of time resolution'
+        steps = window_seconds / grid_s
+        if not math.isclose(steps, round(steps), abs_tol=1e-9):
+            raise ValueError("window_seconds must be divisible by the time grid")
         
         # Compute relative times and check min delta (among all pairs, for collision safety)
         # It could be a time window with no tokens
@@ -200,13 +202,10 @@ class SimpleTokenizerGuitar():
         # Round each relative time to nearest grid step and place token if in bounds
         for token, rel_t in zip(tokens_list, rel_times):
             if rel_t < 0:
-                print('Warning: Got value less than zero while discretizing time')
                 continue
             idx = int(round(rel_t / grid_s))
             if 0 <= idx < len(grid): #with < a note exactly at rel_time=window_seconds is excluded
                 grid[idx] = token
-            if idx > len(grid):
-                print('Warning: Got a token that falls outside the discretized time window')
 
         return grid
 
@@ -218,41 +217,3 @@ def min_delta(times_sec):
         times_sorted[i] - times_sorted[i - 1]
         for i in range(1, len(times_sorted))
     )
-
-
- #Per l errore quando nelle vere notes ho uno star power che inizia in un tick semza altre note, 
- # esso non viene salvato perche non salvo gli inizi degli star power.
- # quando pero decodo la prima nota in quello star power allora il decoder mettera S,2 con quella nota 
- # e quindi invertendo l ordine di apparizione delle note.
-
- #Nelle decoded notes avro sempre lo star power messo dopo la prima nota dello star power
- #con lo stesso tick start
-
-if __name__ == "__main__":
-    tok = SimpleTokenizerGuitar()
-
-    processor = ChartProcessor(['Expert', 'Medium', 'Easy'], ['Single', 'Drums'])
-
-    t1 = timeit.default_timer()
-    processor.read_chart('notes_full.chart')
-    t2 = timeit.default_timer()
-    print('Time processing 2: ', t2-t1 )
-
-    notes = processor.notes["ExpertSingle"]
-    bpm_events = processor.synctrack
-    resolution = int(processor.song_metadata['Resolution'])
-    offset = float(processor.song_metadata['Offset'])
-    print(resolution, offset)
-
-    tok = SimpleTokenizerGuitar()
-
-    t1 = timeit.default_timer()
-    encoded_notes = tok.encode(notes)
-    t2 = timeit.default_timer()
-    print('Time encoding: ', t2-t1 )
-
-    t1 = timeit.default_timer()
-    note_times = tok.format_seconds(encoded_notes, bpm_events,resolution=480, offset=0.05)
-    t2 = timeit.default_timer()
-
-    print('Coversion time: ', t2-t1)

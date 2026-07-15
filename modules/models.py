@@ -1,5 +1,6 @@
 import math
 import inspect
+import logging
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -10,6 +11,9 @@ from modules.transformer_layers import (
 )
 
 from transformers import EncodecModel
+
+
+logger = logging.getLogger(__name__)
 
 
 ###############################
@@ -420,7 +424,8 @@ class TransformerDecoderOnly(nn.Module):
         x = self.positional_encoding(x)
 
         if self.conditional:
-            assert class_ids is not None, "class_idx must be provided for conditional transformer"
+            if class_ids is None:
+                raise ValueError("class_ids are required for conditional generation")
             # Embed the class index and add to the input
             x = x + self.cond_embedding(class_ids).unsqueeze(1)
         
@@ -446,14 +451,17 @@ class TransformerDecoderOnly(nn.Module):
         ]
         num_decay_params = sum(p.numel() for p in decay_params)
         num_nodecay_params = sum(p.numel() for p in nodecay_params)
-        print(f"num decayed parameter tensors: {len(decay_params)}, with {num_decay_params:,} parameters")
-        print(f"num non-decayed parameter tensors: {len(nodecay_params)}, with {num_nodecay_params:,} parameters")
+        logger.info(
+            "Optimizer parameters: %d decayed tensors (%d parameters), "
+            "%d non-decayed tensors (%d parameters)",
+            len(decay_params), num_decay_params, len(nodecay_params), num_nodecay_params,
+        )
         # Create AdamW optimizer and use the fused version if it is available
         fused_available = 'fused' in inspect.signature(torch.optim.AdamW).parameters
         use_fused = fused_available and device_type == 'cuda'
         extra_args = dict(fused=True) if use_fused else dict()
         optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate, betas=betas, **extra_args)
-        print(f"using fused AdamW: {use_fused}")
+        logger.info("Using fused AdamW: %s", use_fused)
 
         return optimizer
     
@@ -496,7 +504,7 @@ class TransformerDecoderOnly(nn.Module):
                 
                 # Stop if we generate pad token
                 if (next_token == self.pad_token_id or next_token == self.eos_token_id).all():
-                    print('Found exit token, stopping generation')
+                    logger.debug("Encountered the end-of-sequence token")
                     break
                     
         return generated

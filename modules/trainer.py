@@ -371,8 +371,8 @@ class WaveformTransformerDiscrete(L.LightningModule):
         self.transformer = instantiate(
             cfg_model.transformer,
             vocab_size=self.vocab_size,
-            pad_token_id=-1, #self.pad_token_id, use only if there are tokens to not attend to but at the moment i have discrete full seqs
-            eos_token_id=self.eos_token_id, # useless, TODO:delete
+            pad_token_id=-1,
+            eos_token_id=self.eos_token_id,
             codebook_size=codebook_size,
             audio_feature_dim=audio_feature_dim,
             num_audio_codebooks=num_audio_codebooks,
@@ -441,9 +441,8 @@ class WaveformTransformerDiscrete(L.LightningModule):
 
         audio, padding_mask, input_tokens, target_tokens, class_ids = self._extract_batch(batch)
 
-        assert not torch.isnan(audio).any(), "NaN in audio"
-        assert not torch.isinf(audio).any(), "Inf in audio"
-        assert not torch.isnan(target_tokens).any(), "NaN in note tokens"
+        if not torch.isfinite(audio).all():
+            raise ValueError("Audio batch contains non-finite values")
 
         # Forward pass
         audio_codes = self._encode_audio(audio, padding_mask)
@@ -561,23 +560,6 @@ class WaveformTransformerDiscrete(L.LightningModule):
         if  batch_idx % 100 == 0:
             with torch.no_grad():
                 original_loss = F.cross_entropy(logits_flat, targets_flat, weight=weights)
-                
-                #zero_audio = torch.zeros_like(audio_encoded)
-                #zero_logits = self.transformer(input_tokens, zero_audio, attention_mask=mask, class_ids=class_ids)
-                #zero_logits_flat = zero_logits.reshape(-1, self.vocab_size)
-                #zero_loss = F.cross_entropy(zero_logits_flat, targets_flat, ignore_index=self.vocab_size-1)
-                #zero_delta = (zero_loss - original_loss).abs() / (original_loss + 1e-8)
-                #self.log("val/cond_zero_delta_loss", zero_delta, on_step=True)
-                
-                #if audio_encoded.numel() > 0:
-                #    noise_scale = audio_enc.std().clamp(min=1e-6)
-                #    noise = torch.randn_like(audio_encoded) * noise_scale
-                #    noisy_audio = audio_encoded + noise
-                #    noisy_logits = self.transformer(input_tokens, noisy_audio, attention_mask=mask, class_ids=class_ids)
-                #    noisy_logits_flat = noisy_logits.reshape(-1, self.vocab_size)
-                #    noisy_loss = F.cross_entropy(noisy_logits_flat, targets_flat, weight=weights)
-                #    noisy_delta = (noisy_loss - original_loss).abs() / (original_loss + 1e-8)
-                #    self.log("ablation/cond_noisy_delta_loss", noisy_delta, on_step=True)
                 
                 if audio_codes.size(0) > 1:
                     perm = torch.randperm(audio_codes.size(0), device=audio_codes.device)

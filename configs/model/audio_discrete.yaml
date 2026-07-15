@@ -28,7 +28,7 @@ encoder:
 
 # Transformer decoder config
 transformer:
-  _target_: modules.transformer2.TransformerDecoderAudioConditioned
+  _target_: modules.training_transformer.TransformerDecoderAudioConditioned
 
   # --- Model dimensions ---
   d_model: 512                
