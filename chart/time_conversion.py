@@ -68,7 +68,7 @@ def tick_to_seconds(tick, bmp_segments, resolution, segment_ticks=None):
         # If tick is before first BPM event, use first BPM for the entire duration
         base_tick, bpm, base_time = bmp_segments[0]
         delta_ticks = tick - 0  # From start
-        delta_time = (delta_ticks / resolution) * (60.0 / bmp)
+        delta_time = (delta_ticks / resolution) * (60.0 / bpm)
         return delta_time
     
     base_tick, bpm, base_time = bmp_segments[idx]
