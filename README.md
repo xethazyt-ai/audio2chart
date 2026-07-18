@@ -193,6 +193,7 @@ You can explore all model variants in the
 audio2chart/
 ├── inference/
 │   ├── model_inference.py     # Inference model with KV-cache support
+│   ├── layers.py              # Self-contained inference model primitives
 │   └── engine.py              # Inference engine
 ├── chart/
 │   ├── tokenizer.py           # Tokenization utilities
@@ -206,10 +207,9 @@ audio2chart/
 ├── modules/
 │   ├── models.py              # torch.nn models
 │   ├── trainer.py             # Lightning training modules
-│   ├── transformer_layers.py  # torch.nn transformer layers
-│   ├── transformer2.py        # torch.nn layers and final training model 
-│   ├── utils_trian.py         # Training utils
-│   └── scheduler.py           # Learning rate scheduler used during training
+│   ├── training_transformer.py # Audio-conditioned training model
+│   ├── utils_train.py         # Training utils
+│   └── run_utils.py           # Training run setup and lifecycle
 ├── notebooks/
 │   └── generating.py          # Colab notebook for charting
 ├── baseline.py                # Baseline training script

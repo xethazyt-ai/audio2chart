@@ -7,10 +7,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 FROZEN_HASHES = {
     "inference/engine.py": "6c1b61f33a9300db5545997524125a750c4afdef",
-    "inference/model_inference.py": "6cd2385275c06e325dd2e8d49a18808ea4d59edc",
+    "inference/model_inference.py": "6177a957b03940cb3fe2bbaa89fce3de3adce4e3",
+    "inference/layers.py": "e44bfddff391fe20f482c7152eef11abd9dc88bd",
     "generate.py": "ddf2d9b1b24aca592e38d8157303531b0f60abd2",
     "notebooks/audio2chart_charting.ipynb": "784fe5ffbbc2aa8efdbf20104ae09591e5ab6bf0",
-    "modules/transformer2.py": "59239de999e86eebad22a2565c841e270f24ef14",
 }
 
 
@@ -36,6 +36,15 @@ class ArchitectureSurfaceTests(unittest.TestCase):
     def test_inference_files_are_still_tracked_and_present(self):
         self.assertTrue((ROOT / "inference" / "engine.py").is_file())
         self.assertTrue((ROOT / "inference" / "model_inference.py").is_file())
+        self.assertTrue((ROOT / "inference" / "layers.py").is_file())
+
+    def test_inference_model_is_self_contained(self):
+        contents = (ROOT / "inference" / "model_inference.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("from inference.layers import", contents)
+        self.assertNotIn("from modules.", contents)
+        self.assertFalse((ROOT / "modules" / "transformer2.py").exists())
 
     def test_frozen_inference_surface_is_byte_identical(self):
         for relative_path, expected in FROZEN_HASHES.items():
