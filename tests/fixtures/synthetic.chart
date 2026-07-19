@@ -1,0 +1,35 @@
+[Song]
+{
+  Resolution = 192
+  Offset = "0.05"
+  Genre = "Rock"
+}
+[SyncTrack]
+{
+  0 = B 120000
+  384 = B 180000
+}
+[ExpertSingle]
+{
+  0 = N 0 0
+  0 = N 1 96
+  0 = N 1 48
+  0 = N 5 0
+  192 = S 2 384
+  192 = N 7 0
+  384 = N 2 192
+  384 = N 6 0
+  576 = N 3 0
+}
+[HardSingle]
+{
+  0 = N 0 0
+}
+[MediumDoubleBass]
+{
+  96 = N 2 0
+}
+[EasyDrums]
+{
+  48 = N 3 0
+}

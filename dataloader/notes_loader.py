@@ -1,11 +1,9 @@
-import os
+import logging
 from torch.utils.data import Dataset, DataLoader
 import torch
 import math
 from typing import List, Dict, Any, Optional
 
-import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from chart.chart_processor import ChartProcessor
 from chart.tokenizer import SimpleTokenizerGuitar
 
@@ -17,9 +15,10 @@ DIFF_MAPPING = {
     'Medium': 2,
     'Easy': 3
 }
+logger = logging.getLogger(__name__)
 
 class ChartChunksDataset(Dataset):
-    def __init__(self, chart_paths, difficulties, instruments, seq_len, conditional=False, is_discrete=False, window_seconds=30, pad_token_id=-1, grid_ms=20):
+    def __init__(self, chart_paths, difficulties, instruments, seq_len, conditional=False, is_discrete=False, window_seconds=30, pad_token_id=-1, grid_ms=20, error_policy="strict"):
         
         self.seq_len = seq_len - 2 #Add bos and eos in collate 
         self.chunks = []
@@ -29,6 +28,9 @@ class ChartChunksDataset(Dataset):
         self.window_seconds = window_seconds
         self.pad_token_id = pad_token_id
         self.grid_ms = grid_ms
+        if error_policy not in {"strict", "skip"}:
+            raise ValueError("error_policy must be 'strict' or 'skip'")
+        self.error_policy = error_policy
 
         proc = ChartProcessor(difficulties, instruments)
         self.tokenizer = SimpleTokenizerGuitar()
@@ -43,16 +45,21 @@ class ChartChunksDataset(Dataset):
                 resolution = int(proc.song_metadata['Resolution'])
                 offset = float(proc.song_metadata['Offset'])                
                 self.prepare_chunks(notes, bpm_events, resolution, offset)
-            except Exception as e:
-                print(f"Error processing chart {path}: {e}")
+            except (KeyError, OSError, TypeError, ValueError) as error:
+                if error_policy == "strict":
+                    raise ValueError(f"Failed to process chart {path}") from error
+                logger.warning("Skipping chart %s: %s", path, error)
                 n_failed_paths += 1
                 continue
-        
-        print(f"Processed {len(chart_paths) - n_failed_paths} charts, failed on {n_failed_paths} paths.")
+        if not self.chunks:
+            raise ValueError("No training chunks were produced")
+        logger.info("Processed %d charts; skipped %d", len(chart_paths) - n_failed_paths, n_failed_paths)
 
     def prepare_chunks(self, notes, bpm_events, resolution, offset):
         for section_name, note_seq in notes.items():
             encoded_notes = self.tokenizer.encode(note_list=note_seq)
+            if not encoded_notes:
+                continue
             
             if not self.is_discrete:
                 encoded_list = [n[1] for n in encoded_notes]
@@ -99,8 +106,8 @@ class ChartChunksDataset(Dataset):
 
 def create_chart_dataloader(
         chart_paths: List[str], 
-        difficulties: List[str] = ['Expert'], 
-        instruments: List[str] = ['Single'],
+        difficulties: Optional[List[str]] = None,
+        instruments: Optional[List[str]] = None,
         batch_size: int = 32,
         max_length: int = 512,
         num_workers: int = 4,
@@ -109,7 +116,8 @@ def create_chart_dataloader(
         vocab: Optional[Dict] = None,
         is_discrete: bool = False, 
         window_seconds: int = 30,
-        grid_ms: int = 20
+        grid_ms: int = 20,
+        error_policy: str = "strict",
     ):
     """
     Create a DataLoader for chart files with proper batching and tokenization
@@ -135,6 +143,11 @@ def create_chart_dataloader(
         vocab['<bos>'] = bos_token_id
         vocab['<eos>'] = eos_token_id 
         vocab['<PAD>'] = pad_token_id
+    else:
+        required_tokens = {"<bos>", "<eos>", "<PAD>"}
+        if not required_tokens.issubset(vocab):
+            raise ValueError(f"vocab must contain {sorted(required_tokens)}")
+        pad_token_id = vocab["<PAD>"]
 
     collator = ChartCollator(
         bos_token=vocab['<bos>'], 
@@ -147,14 +160,15 @@ def create_chart_dataloader(
 
     dataset = ChartChunksDataset(
         chart_paths,
-        difficulties,
-        instruments, 
+        difficulties or ["Expert"],
+        instruments or ["Single"],
         max_length, 
         conditional, 
         is_discrete, 
         window_seconds, 
         pad_token_id=pad_token_id,
-        grid_ms=grid_ms
+        grid_ms=grid_ms,
+        error_policy=error_policy,
     )
     
     dataloader = DataLoader(
@@ -206,10 +220,10 @@ def chart_collate_fn(batch, bos_token, eos_token, pad_token=-100, max_length=512
         # Handle padding and attention mask
         if len(sample) >= max_length:
             sample = sample[:max_length]
-            attention_mask = [1] * (max_length-1)
+            attention_mask = [1] * max_length
             padded_tokens = sample
         else:
-            attention_mask = [1] * len(sample) + [0] * (max_length -1 - len(sample))
+            attention_mask = [1] * len(sample) + [0] * (max_length - len(sample))
             padded_tokens = sample + [pad_token] * (max_length - len(sample))
 
         padded_batch.append(padded_tokens)

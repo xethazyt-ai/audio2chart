@@ -1,31 +1,40 @@
-#Data Config
-root_folder: ../data
-batch_size: 4
-validation_split: 0.2
-diff_list: 
-  - Expert
-  #- Hard
-  #- Medium
-  #- Easy
-inst_list: 
-  - Single
-max_length: 2048
+data:
+  root_folder: ../data
+  split_folder: null
+  validation_split: 0.2
+  difficulties: [Expert]
+  instruments: [Single]
+  max_length: 2048
+  error_policy: strict
 
+loader:
+  batch_size: 4
+  val_batch_size: 64
+  num_workers: 8
+  train_num_pieces: 6
+  val_num_pieces: 1
+  max_sample_retries: 5
 
-#Optimizer Config
 optimizer:
   lr: 1e-3
   weight_decay: 0.01
   warmup_steps: 750
   max_steps: 30000
 
+trainer:
+  max_epochs: 200
+  gpus: 1
+  precision: bf16
+  save_run: false
+  log_every_n_steps: 10
+  early_stopping_patience: 5
+  gradient_clip_val: 1.0
+  num_sanity_val_steps: 0
 
-#Trainer
-max_epochs: 200
-gpus: 1
-precision: 'bf16'
-save_run: false
+tracking:
+  enabled: true
+  project: audio2chart
+  tags: []
 
-
-#Wandb
-tags:  ???
+logging:
+  level: INFO

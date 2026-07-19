@@ -2,7 +2,7 @@ from typing import Optional, Tuple, Union, List
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from modules.transformer2 import swiglu, RMSNorm, TemporalConvPool, FeedForward
+from inference.layers import FeedForward, RMSNorm, TemporalConvPool
 
 def apply_rotary_emb(x: torch.Tensor, dim: int, base: float = 10000.0, position_offset: int = 0) -> torch.Tensor:
     """
@@ -289,7 +289,7 @@ class DecoderBlockCrossAttention(nn.Module):
 
         if use_cache:
             return x, self_kv, cross_kv
-        return x, None
+        return x, None, None
 
 
 class TransformerDecoderAudioConditioned(nn.Module):
