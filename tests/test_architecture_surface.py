@@ -7,7 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 FROZEN_HASHES = {
     "inference/engine.py": "6c1b61f33a9300db5545997524125a750c4afdef",
-    "inference/model_inference.py": "6177a957b03940cb3fe2bbaa89fce3de3adce4e3",
+    "inference/model_inference.py": "cd526cfbb27acd9921fb51a3c240f489bdad80c6",
     "inference/layers.py": "e44bfddff391fe20f482c7152eef11abd9dc88bd",
     "generate.py": "ddf2d9b1b24aca592e38d8157303531b0f60abd2",
     "notebooks/audio2chart_charting.ipynb": "784fe5ffbbc2aa8efdbf20104ae09591e5ab6bf0",

@@ -289,7 +289,7 @@ class DecoderBlockCrossAttention(nn.Module):
 
         if use_cache:
             return x, self_kv, cross_kv
-        return x, None
+        return x, None, None
 
 
 class TransformerDecoderAudioConditioned(nn.Module):
