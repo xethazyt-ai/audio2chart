@@ -10,33 +10,6 @@ A complete description of the methodology, architecture, and experiments can be 
 
 The repository provides a full codebase for both **training** and **inference**, including data processing pipelines, neural network architectures, and ready to use scripts for generating playable charts from real songs.
 
-## Tests and benchmarks
-
-Run the dependency-light chart, tokenizer, and timing suite with:
-
-```bash
-python -m unittest tests.test_chart_pipeline
-```
-
-After installing the pinned environment (`pip install -r requirements.txt`), run the full suite with:
-
-```bash
-python -m unittest discover -s tests -p 'test_*.py'
-```
-
-Dependency-heavy tests skip with a clear reason if the training stack is unavailable. Performance comparisons are kept separate from unit tests:
-
-```bash
-python tests/benchmark_chart_pipeline.py
-python tests/benchmark_chart_pipeline.py --json
-python tests/benchmark_chart_pipeline.py --max-ratio 1.25
-```
-
-The benchmark checks reference/refactored output equivalence before reporting median timing ratios for small, typical, and large synthetic charts. The optional `--max-ratio` makes it fail when any ratio exceeds the supplied threshold.
-
-
----
-
 ## Overview
 
 The repository contains everything needed to:
@@ -247,6 +220,32 @@ For questions, discussions, or contributions, open an Issue on GitHub.
 ## Acknowledgments
 
 This project was supported by **AMD** and the **AMD Developer Cloud**, whose compute resources made training and experimentation possible.
+
+---
+
+## Tests and benchmarks
+
+Run the dependency-light chart, tokenizer, and timing suite with:
+
+```bash
+python -m unittest tests.test_chart_pipeline
+```
+
+After installing the pinned environment (`pip install -r requirements.txt`), run the full suite with:
+
+```bash
+python -m unittest discover -s tests -p 'test_*.py'
+```
+
+Dependency-heavy tests skip with a clear reason if the training stack is unavailable. Performance comparisons are kept separate from unit tests:
+
+```bash
+python tests/benchmark_chart_pipeline.py
+python tests/benchmark_chart_pipeline.py --json
+python tests/benchmark_chart_pipeline.py --max-ratio 1.25
+```
+
+The benchmark checks reference/refactored output equivalence before reporting median timing ratios for small, typical, and large synthetic charts. The optional `--max-ratio` makes it fail when any ratio exceeds the supplied threshold.
 
 ---
 
