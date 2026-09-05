@@ -66,6 +66,9 @@ def build_dataloaders(
         instruments=instruments,
         grid_ms=config.data.grid_ms,
         error_policy=config.data.error_policy,
+        # Judge a song by whether any window is usable, the way the loader does, rather
+        # than by its single tightest transition anywhere in the chart.
+        window_seconds=config.data.window_seconds,
     )
     train_files = validate_dataset(train_files, **validation)
     val_files = validate_dataset(val_files, **validation)
