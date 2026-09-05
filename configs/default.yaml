@@ -16,6 +16,7 @@ loader:
   train_num_pieces: 6
   val_num_pieces: 1
   max_sample_retries: 5
+  max_cache_gb: 20.0
 
 optimizer:
   lr: 1e-3

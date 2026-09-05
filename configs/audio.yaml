@@ -49,6 +49,12 @@ loader:
   val_batch_size: 1
   val_num_pieces: 1
   num_workers: 4
+  # Audio cache budget per dataloader, divided among its workers. The 20 GB default
+  # becomes 40 GB during validation, because persistent_workers keeps the training
+  # workers alive while the validation loader spawns its own -- which killed a run at
+  # batch 1200 on this 32 GB host, silently, right as it serialized a checkpoint.
+  # 6 GB here is 1.5 GB per worker and at most 12 GB across both loaders.
+  max_cache_gb: 6.0
 
 model:
   # Fine-tune from the released 20 ms checkpoint. The transformer block below must keep

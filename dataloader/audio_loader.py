@@ -646,7 +646,11 @@ def create_chunked_audio_chart_dataloader(
     Set use_predecoded_raw=True and predecode files with ffmpeg beforehand.
     """
 
-    # Adjust cache per worker
+    # Adjust cache per worker. Note this budget is per dataloader, and persistent_workers
+    # keeps the training loader's workers alive while validation spawns its own set, so
+    # the machine must hold roughly twice this figure at once. The 20 GB default therefore
+    # means 40 GB of audio cache during validation, which on a 32 GB host kills the run at
+    # the most memory-hungry moment -- serializing a checkpoint right after validation.
     if num_workers > 0:
         max_cache_gb = max_cache_gb / num_workers
 

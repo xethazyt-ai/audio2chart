@@ -96,6 +96,9 @@ def build_dataloaders(
         ),
         error_policy=config.data.error_policy,
         max_sample_retries=config.loader.max_sample_retries,
+        # Per dataloader, split across its workers. persistent_workers keeps the training
+        # workers alive through validation, so the host holds two of these at once.
+        max_cache_gb=config.loader.max_cache_gb,
     )
     train_loader, vocab = create_chunked_audio_chart_dataloader(
         train_files,
