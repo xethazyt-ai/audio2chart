@@ -65,6 +65,12 @@ model:
 trainer:
   # Defaults to false, which produces no checkpoints at all.
   save_run: true
+  # At 9.1 s/batch this validates and checkpoints roughly every 2.5 hours. The default
+  # (once per epoch) would mean a single save point per day, and an OOM at hour 20 --
+  # entirely possible at 97% VRAM -- would lose the whole run.
+  val_check_interval: 1000
+  # The 20% val split is ~2,740 songs; validating all of it costs hours every time.
+  limit_val_batches: 200
   # 2 sequences per step x 4 = 8 sequences per optimizer step. Larger accumulation looks
   # attractive but at 9.1 s/batch, 32 would mean 4.9 minutes per optimizer step and only
   # ~344 steps in a 28-hour epoch -- too few for any schedule to do useful work.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime
 from pathlib import Path
 
@@ -138,11 +139,21 @@ def run(config: DictConfig) -> None:
                 config, "model.pretrained_allow_partial", default=False
             ),
         )
+    # An epoch here is over a day and the card runs at ~97% VRAM, so a run that dies part
+    # way through is the expected case, not the exceptional one. `save_last` keeps a
+    # last.ckpt beside the monitored best; point trainer.resume_path at it to continue.
+    resume_path = OmegaConf.select(config, "trainer.resume_path", default=None)
+    if resume_path and not Path(resume_path).is_file():
+        raise FileNotFoundError(f"trainer.resume_path does not exist: {resume_path}")
+    if resume_path:
+        logging.getLogger(__name__).info("Resuming from %s", resume_path)
+
     with experiment_logger(config, build_run_name(config)) as logger:
         build_trainer(config, logger, MONITORED_METRIC).fit(
             model,
             train_dataloaders=train_loader,
             val_dataloaders=val_loader,
+            ckpt_path=resume_path,
         )
 
 

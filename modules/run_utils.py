@@ -63,15 +63,22 @@ def build_callbacks(config: DictConfig, monitor: str, mode: str = "max") -> list
             save_top_k=1,
             mode=mode,
             filename="best-checkpoint",
+            # A monitored checkpoint is only written when validation runs. On a corpus
+            # this size an epoch is over a day, so without save_last a crash twenty hours
+            # in would leave nothing to resume from. last.ckpt is written unconditionally.
+            save_last=True,
         ))
     return callbacks
 
 
 def build_trainer(config: DictConfig, logger: object, monitor: str) -> L.Trainer:
     use_gpu = config.trainer.gpus > 0
+    # val_check_interval also sets how often a checkpoint can be written, because the
+    # monitored ModelCheckpoint only fires on validation. Left unset, Lightning validates
+    # once per epoch, which on this corpus is over a day between save points.
     limits = {
         name: OmegaConf.select(config, f"trainer.{name}")
-        for name in ("limit_train_batches", "limit_val_batches")
+        for name in ("limit_train_batches", "limit_val_batches", "val_check_interval")
     }
     return L.Trainer(
         max_epochs=config.trainer.max_epochs,

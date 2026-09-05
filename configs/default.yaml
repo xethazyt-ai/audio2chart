@@ -37,6 +37,10 @@ trainer:
   max_steps: -1
   limit_train_batches: null
   limit_val_batches: null
+  # Batches between validations, and therefore between checkpoints. null = once per epoch.
+  val_check_interval: null
+  # Lightning checkpoint to resume from; null starts fresh.
+  resume_path: null
 
 tracking:
   enabled: true
