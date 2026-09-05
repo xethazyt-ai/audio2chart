@@ -194,16 +194,16 @@ Sustains and the forced/tap flags travel inside the token, but star power does n
 
 `--detect-tempo` fits a single BPM plus phase, searching **100-200 BPM** by default. Songs with genuine mid-song tempo changes, or a true tempo outside that range, need `--sync-from` or a manual `--bpm`. The lead-in before the first beat is absorbed into a short first tempo segment so that tick 0 still maps to t=0 and `Offset` stays 0.
 
-### The frozen-surface test fails on Windows checkouts
+### Regenerating the frozen inference hashes
 
-`tests/test_architecture_surface.py` pins SHA-1 hashes of the raw bytes of the inference files. With Git's `core.autocrlf=true` (the Windows default) those files are checked out with CRLF line endings, so the hashes never match and `test_frozen_inference_surface_is_byte_identical` fails. The pins are correct for a normal LF checkout.
+`tests/test_architecture_surface.py` pins a SHA-1 of each inference-path file, hashed with line
+endings normalised to LF so the pins hold on Windows checkouts too. If you deliberately change
+one of those files, re-pin it:
 
-The test asserts on the first mismatch, so one failing file masks all the others.
-
-Fix, if you want it to pass locally, by adding a `.gitattributes`:
-
-```
-*.py text eol=lf
+```bash
+python -c "import hashlib,pathlib;print(hashlib.sha1(pathlib.Path('generate.py').read_bytes().replace(b'
+',b'
+')).hexdigest())"
 ```
 
 ---
