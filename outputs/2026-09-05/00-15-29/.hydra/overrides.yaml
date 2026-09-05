@@ -1,5 +1,0 @@
-- trainer.limit_train_batches=3
-- trainer.limit_val_batches=1
-- trainer.max_epochs=1
-- trainer.save_run=false
-- trainer.log_every_n_steps=1

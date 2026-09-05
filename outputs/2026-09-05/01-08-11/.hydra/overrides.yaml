@@ -1,6 +1,0 @@
-- trainer.limit_train_batches=6
-- trainer.limit_val_batches=1
-- trainer.max_epochs=1
-- trainer.val_check_interval=3
-- trainer.save_run=true
-- trainer.log_every_n_steps=1

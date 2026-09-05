@@ -1,6 +1,0 @@
-- data.root_folder=G:/a2c_data/bench
-- trainer.limit_train_batches=15
-- trainer.limit_val_batches=2
-- trainer.max_epochs=1
-- trainer.save_run=false
-- trainer.log_every_n_steps=1
