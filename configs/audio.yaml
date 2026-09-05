@@ -10,8 +10,13 @@ optimizer:
   # the pretrained weights out in the first few hundred steps.
   lr: 1e-4
   lr_audio: 1e-3          # unused while model.freeze_encoder is true
-  warmup_steps: 500
-  max_steps: 200000
+  # Measured on the 3060 Ti: 9.1 s per batch, and one batch per song, so an epoch over
+  # ~11,000 training songs is about 28 hours and yields ~2,750 optimizer steps at the
+  # accumulation below. The repo defaults (warmup 750, max 30000) and my first pass
+  # (warmup 500, max 200000) were both written for a machine that gets far more steps
+  # per epoch -- warmup alone would not have finished inside a full epoch here.
+  warmup_steps: 200
+  max_steps: 6000         # roughly two epochs
 
 data:
   root_folder: G:/a2c_data
@@ -30,11 +35,15 @@ loader:
   # through a 1024-wide, 16-layer decoder. The repo defaults (4 x 6 train, 64 x 1 val)
   # would be 24 and 64 sequences per step -- certain OOM on this card.
   #
-  # Measured: 4 sequences per step peaked at 7986 MiB of the 3060 Ti's 8192, with ~1290
-  # of that held by the desktop. It ran, but 97.5% of the card is not headroom -- one
-  # longer window or any graphical activity would OOM the run. 2 sequences roughly halves
-  # the activation share; accumulate_grad_batches below is doubled to keep the same
-  # 64-sequence optimizer step.
+  # Measured on the 3060 Ti: 4 sequences per step peaked at 7986 MiB of 8192, and 2 at
+  # 7972 -- 14 MiB apart. Memory here is the fixed cost of 230 M parameters plus their
+  # gradients and AdamW moments (~3.7 GB in fp32) plus the caching allocator, not the
+  # activations, so trading sequences away buys no headroom. Both configurations sit at
+  # ~97% of the card and will OOM if anything else claims VRAM.
+  #
+  # 2 is kept because it is the configuration with a clean measured step time (9.1 s/batch
+  # on a quiet drive). Real headroom needs a different lever -- freezing the lower decoder
+  # layers would cut gradients and optimizer state, which is where the memory actually is.
   batch_size: 1
   train_num_pieces: 2
   val_batch_size: 1
@@ -56,8 +65,10 @@ model:
 trainer:
   # Defaults to false, which produces no checkpoints at all.
   save_run: true
-  # 2 sequences per step x 32 = 64 sequences per optimizer step.
-  accumulate_grad_batches: 32
+  # 2 sequences per step x 4 = 8 sequences per optimizer step. Larger accumulation looks
+  # attractive but at 9.1 s/batch, 32 would mean 4.9 minutes per optimizer step and only
+  # ~344 steps in a 28-hour epoch -- too few for any schedule to do useful work.
+  accumulate_grad_batches: 4
 
 tracking:
   enabled: false

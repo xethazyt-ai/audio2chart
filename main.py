@@ -69,6 +69,9 @@ def build_dataloaders(
         # Judge a song by whether any window is usable, the way the loader does, rather
         # than by its single tightest transition anywhere in the chart.
         window_seconds=config.data.window_seconds,
+        # Parsing 13,720 charts costs ~2 hours before the first batch, and again after
+        # every crash. Verdicts are reused while the chart and these settings are unchanged.
+        cache_path=Path(config.data.root_folder) / "validation_cache.json",
     )
     train_files = validate_dataset(train_files, **validation)
     val_files = validate_dataset(val_files, **validation)

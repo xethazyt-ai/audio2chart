@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import random
@@ -15,10 +16,13 @@ import torch
 
 from chart.chart_processor import ChartProcessor
 from chart.tokenizer import SimpleTokenizerGuitar
+# One ceiling, not two. This module used to define its own MAX_NOTES = 5000 while
+# discovery used 50000, so every dense chart discovery admitted was silently rejected
+# again at training time -- undoing the filter fix without a word in the logs.
+from dataloader.utils_dataloader import MAX_NOTES
 
 
 logger = logging.getLogger(__name__)
-MAX_NOTES = 5000
 ERROR_POLICIES = {"strict", "skip"}
 
 
@@ -114,6 +118,47 @@ def _validate_encoded_chart(
         )
 
 
+def _cache_signature(
+    difficulties: list[str], instruments: list[str], grid_ms: int,
+    window_seconds: float | None, max_notes: int,
+) -> dict[str, Any]:
+    """Everything that changes a verdict. A mismatch discards the whole cache."""
+    return {
+        "difficulties": sorted(difficulties),
+        "instruments": sorted(instruments),
+        "grid_ms": grid_ms,
+        "window_seconds": window_seconds,
+        "max_notes": max_notes,
+    }
+
+
+def _load_cache(path: Path | None, signature: dict[str, Any]) -> dict[str, Any]:
+    if path is None or not path.is_file():
+        return {}
+    try:
+        with path.open(encoding="utf-8") as stream:
+            blob = json.load(stream)
+    except (OSError, ValueError) as error:
+        logger.warning("Ignoring unreadable validation cache %s: %s", path, error)
+        return {}
+    if blob.get("signature") != signature:
+        logger.info("Validation cache signature changed; revalidating from scratch")
+        return {}
+    entries = blob.get("entries")
+    return entries if isinstance(entries, dict) else {}
+
+
+def _write_cache(path: Path | None, signature: dict[str, Any], entries: dict[str, Any]) -> None:
+    if path is None:
+        return
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8") as stream:
+            json.dump({"signature": signature, "entries": entries}, stream)
+    except OSError as error:
+        logger.warning("Could not write validation cache %s: %s", path, error)
+
+
 def validate_dataset(
     data: Iterable[dict[str, Any]],
     difficulties: list[str],
@@ -121,33 +166,67 @@ def validate_dataset(
     grid_ms: int,
     error_policy: str = "strict",
     window_seconds: float | None = None,
+    cache_path: str | Path | None = None,
 ) -> list[dict[str, Any]]:
     """Validate audio manifest entries before constructing a dataset.
 
     Pass `window_seconds` to judge each song by whether it has any usable window, which
     is the constraint the runtime actually imposes. Without it the whole section has to
     clear the grid, which throws away songs the loader would have handled.
+
+    `cache_path` memoizes the verdicts. Parsing a chart costs ~0.5 s, so a 13,720-entry
+    corpus spends about two hours here before the first batch, and pays it again after
+    every crash or OOM. A verdict is reused only when the chart's mtime and size are
+    unchanged and the settings that produced it still match.
     """
     _validate_policy(error_policy)
     processor = ChartProcessor(difficulties, instruments)
     tokenizer = SimpleTokenizerGuitar()
+    signature = _cache_signature(difficulties, instruments, grid_ms, window_seconds, MAX_NOTES)
+    cache_file = Path(cache_path) if cache_path else None
+    cache = _load_cache(cache_file, signature)
+
     valid: list[dict[str, Any]] = []
+    hits = 0
     for index, item in enumerate(data):
+        key = f"{item.get('chart_path')}|{item.get('difficulty')}"
+        stamp: list[int] | None = None      # Per iteration: never carry one chart's stamp to the next.
         try:
             chart_path = item["chart_path"]
             section = item["difficulty"]
             if not isinstance(chart_path, str) or not isinstance(section, str):
                 raise TypeError("chart_path and difficulty must be strings")
+
+            try:
+                info = os.stat(chart_path)
+                stamp = [info.st_mtime_ns, info.st_size]
+            except OSError:
+                pass  # Fall through to a real parse, which will report the problem.
+
+            cached = cache.get(key) if stamp is not None else None
+            if cached is not None and cached.get("stamp") == stamp:
+                hits += 1
+                if cached.get("error"):
+                    raise ValueError(cached["error"])
+                valid.append(item)
+                continue
+
             processor.read_chart(chart_path, target_sections=section)
             _validate_encoded_chart(processor, tokenizer, section, grid_ms, window_seconds)
+            if stamp is not None:
+                cache[key] = {"stamp": stamp, "error": None}
             valid.append(item)
         except (KeyError, OSError, TypeError, ValueError) as error:
+            if stamp is not None:
+                cache[key] = {"stamp": stamp, "error": str(error)}
             if error_policy == "strict":
                 raise ValueError(f"Invalid manifest entry at index {index}") from error
             logger.warning("Skipping invalid manifest entry %d: %s", index, error)
+
+    _write_cache(cache_file, signature, cache)
     if not valid:
         raise ValueError("Dataset contains no valid entries")
-    logger.info("Validated %d dataset entries", len(valid))
+    logger.info("Validated %d dataset entries (%d from cache)", len(valid), hits)
     return valid
 
 
