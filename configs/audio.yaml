@@ -78,6 +78,9 @@ trainer:
   val_check_interval: 1000
   # The 20% val split is ~2,740 songs; validating all of it costs hours every time.
   limit_val_batches: 200
+  # A resume point every ~27 minutes, so pausing or crashing costs minutes rather than
+  # the 2.5 hours between validations.
+  checkpoint_every_n_steps: 200
   # 2 sequences per step x 4 = 8 sequences per optimizer step. Larger accumulation looks
   # attractive but at 9.1 s/batch, 32 would mean 4.9 minutes per optimizer step and only
   # ~344 steps in a 28-hour epoch -- too few for any schedule to do useful work.

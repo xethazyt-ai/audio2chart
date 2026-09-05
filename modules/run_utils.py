@@ -112,6 +112,18 @@ def build_callbacks(config: DictConfig, monitor: str, mode: str = "max") -> list
             # in would leave nothing to resume from. last.ckpt is written unconditionally.
             save_last=True,
         ))
+        # Validation is what makes the monitored checkpoint expensive (200 batches, ~13
+        # minutes), not the 1.9 GB write (~30 s). Tying resume points to it puts them
+        # hours apart, so a pause or a crash costs hours. This one saves last.ckpt on a
+        # plain step count with no validation: at ~8 s/batch, 200 batches is a resume
+        # point every ~27 minutes for about 2% overhead.
+        interval = OmegaConf.select(config, "trainer.checkpoint_every_n_steps", default=0)
+        if interval:
+            callbacks.append(L.pytorch.callbacks.ModelCheckpoint(
+                save_top_k=0,
+                save_last=True,
+                every_n_train_steps=interval,
+            ))
     return callbacks
 
 
