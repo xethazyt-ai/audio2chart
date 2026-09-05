@@ -24,10 +24,16 @@ data:
 
 loader:
   augment: false
-  # 20 ms doubles the sequence to ~1500 tokens against the 40 ms checkpoint, on an 8 GB
-  # card holding a 1024-wide/16-layer decoder. Benchmark before raising either of these.
-  batch_size: 2
-  val_batch_size: 4
+  # The tensor the model sees holds batch_size * num_pieces sequences, not batch_size:
+  # _collate_batch_impl flattens num_pieces windows out of every song into the batch. At
+  # grid_ms 20 each window is 1502 tokens (30 s / 20 ms, + bos/eos, under max_length 2048),
+  # so this is 4 sequences per step through a 1024-wide, 16-layer decoder on an 8 GB card.
+  # The repo defaults (4 x 6 train, 64 x 1 val) would be 24 and 64 -- certain OOM here.
+  # Benchmark before raising any of these.
+  batch_size: 1
+  train_num_pieces: 4
+  val_batch_size: 1
+  val_num_pieces: 1
   num_workers: 4
 
 model:
@@ -45,7 +51,8 @@ model:
 trainer:
   # Defaults to false, which produces no checkpoints at all.
   save_run: true
-  accumulate_grad_batches: 8
+  # 4 sequences per step x 16 = 64 sequences per optimizer step.
+  accumulate_grad_batches: 16
 
 tracking:
   enabled: false

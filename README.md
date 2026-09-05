@@ -182,9 +182,9 @@ Workaround:
 PYTHONIOENCODING=utf-8 python generate.py song.wav
 ```
 
-### Chart metadata is partly hardcoded
+### Star power is not modelled
 
-The template in `chart/chart_writer.py` always writes `MusicStream = "song.ogg"`, `Year = ", 2022"`, `Difficulty = 3` and `Player2 = bass`, regardless of the actual audio filename or the metadata you pass. If your audio is not named `song.ogg`, fix `MusicStream` by hand or rename the file.
+Sustains and the forced/tap flags travel inside the token, but star power does not. It is a phrase-level property spanning many notes and would need run-length modelling, so generated charts contain no SP phrases.
 
 ### Time signatures are not detected
 
@@ -255,6 +255,45 @@ python main.py model=audio_discrete
 ```
 
 Both encoder choices use the same discrete charting Lightning module.
+
+### Fine-tuning a released checkpoint on your own library
+
+`main.py` builds a fresh model unless `model.pretrained` names a checkpoint, in which case
+`modules/pretrained.py` loads it first. It accepts a Hugging Face repo id, a directory holding a
+`pytorch_model.bin`, or a Lightning `.ckpt`, and it widens the token embedding and output
+projection when the training vocabulary is the expressive one and the checkpoint was trained on
+the legacy 35-token one.
+
+**The model config must match the checkpoint's `config.json`.** The released `charter-v1.0-*`
+models are 1024-wide with 16 layers, `num_kv_heads: 8` and `compression: 2` (20 ms) or `3`
+(40 ms); the repo default is 512-wide with 8 layers. Loading refuses rather than proceeding
+partially, because a mismatch would otherwise leave most of the decoder randomly initialised
+while every metric still looked healthy. `configs/audio.yaml` is already pinned to the 20 ms
+model.
+
+Building the dataset for a Clone Hero library:
+
+```bash
+# 1. discover chart/audio pairs and transcode the audio to headerless 24 kHz PCM
+python -m dataloader.convert_to_raw --root "/path/to/Clone Hero Songs"     --difficulties Expert --instruments Single     --raw-dir /data/raw_audio --output-json /data/audio_dataset.json
+
+# 2. merge any additional manifests into the one main.py reads
+python -m dataloader.merge_manifests /data/audio_dataset_with_raw.json /data/other_with_raw.json     --output /data/audio_dataset_with_raw.json
+
+# 3. train
+python main.py data.root_folder=/data
+```
+
+The sample rate must match `model.sample_rate` (24000 for Encodec). `load_raw_audio` reads
+headerless PCM and trusts the rate it is told, so a mismatch plays every song at the wrong speed
+with the chart misaligned, and training still looks healthy.
+
+Two settings routinely surprise people on a small GPU:
+
+- The tensor the model sees holds `batch_size * num_pieces` sequences, not `batch_size` — the
+  collate function flattens `num_pieces` windows out of every song into the batch.
+- At `grid_ms: 20` a 30-second window is 1502 tokens, roughly four times the attention cost of
+  the 40 ms grid.
 
 ---
 
