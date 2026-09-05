@@ -174,10 +174,11 @@ def validate_dataset(
     is the constraint the runtime actually imposes. Without it the whole section has to
     clear the grid, which throws away songs the loader would have handled.
 
-    `cache_path` memoizes the verdicts. Parsing a chart costs ~0.5 s, so a 13,720-entry
-    corpus spends about two hours here before the first batch, and pays it again after
-    every crash or OOM. A verdict is reused only when the chart's mtime and size are
-    unchanged and the settings that produced it still match.
+    `cache_path` memoizes the verdicts. Measured on the full 13,720-entry corpus, a cold
+    pass costs ~9.4 minutes on an idle drive; the same work took roughly twelve times
+    longer while the disk was busy, so the cost is dominated by contention rather than by
+    parsing. A verdict is reused only when the chart's mtime and size are unchanged and
+    the settings that produced it still match.
     """
     _validate_policy(error_policy)
     processor = ChartProcessor(difficulties, instruments)

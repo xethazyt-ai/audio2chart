@@ -54,6 +54,13 @@ model:
   # Fine-tune from the released 20 ms checkpoint. The transformer block below must keep
   # matching its config.json or load_pretrained_transformer raises on shape mismatch.
   pretrained: 3podi/charter-v1.0-20-M-best-acc
+  # VRAM is dominated by trainable parameters: 12 bytes of gradient and AdamW moments per
+  # parameter on top of the 4 the parameter itself costs. At 230 M trainable the card ran
+  # at ~97% and produced three different low-level failures in three runs -- a truncated
+  # checkpoint, a segfault, and CUBLAS_STATUS_EXECUTION_FAILED inside attention. Freezing
+  # the lower half of the decoder holds the general audio-to-chart mapping the released
+  # checkpoint already learned and frees roughly a gigabyte.
+  freeze_layers: 8
   transformer:
     d_model: 1024
     d_ff: 4096

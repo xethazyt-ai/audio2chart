@@ -70,8 +70,9 @@ def build_dataloaders(
         # Judge a song by whether any window is usable, the way the loader does, rather
         # than by its single tightest transition anywhere in the chart.
         window_seconds=config.data.window_seconds,
-        # Parsing 13,720 charts costs ~2 hours before the first batch, and again after
-        # every crash. Verdicts are reused while the chart and these settings are unchanged.
+        # A cold validation pass over the 13,720-entry corpus is ~9.4 minutes idle, and
+        # much worse under disk contention. Verdicts are reused while the chart and these
+        # settings are unchanged.
         cache_path=Path(config.data.root_folder) / "validation_cache.json",
     )
     train_files = validate_dataset(train_files, **validation)
@@ -114,6 +115,36 @@ def build_dataloaders(
     return train_loader, val_loader, vocab
 
 
+def freeze_lower_layers(model, count: int) -> None:
+    """Freeze the bottom `count` decoder blocks, lowest first.
+
+    VRAM here is dominated by trainable parameters, not activations: each one costs 4
+    bytes of gradient plus 8 of AdamW moments on top of its own 4, so 230 M trainable
+    parameters is ~2.8 GB before a single activation. Trading batch shape away moved peak
+    usage by 14 MiB; freezing does the arithmetic that matters. The lower blocks carry the
+    general audio-to-chart mapping the released checkpoint already learned, so they are
+    the ones worth holding fixed while the upper blocks adapt to the new vocabulary.
+
+    `configure_optimizers` already filters on requires_grad, so frozen parameters get no
+    optimizer state.
+    """
+    layers = model.transformer.layers
+    if not 0 < count <= len(layers):
+        raise ValueError(f"freeze_layers must be in 1..{len(layers)}, got {count}")
+    frozen = 0
+    for layer in layers[:count]:
+        for parameter in layer.parameters():
+            if parameter.requires_grad:
+                parameter.requires_grad = False
+                frozen += parameter.numel()
+    trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    logging.getLogger(__name__).info(
+        "Froze %d of %d decoder layers (%.1f M parameters); %.1f M still trainable, "
+        "saving ~%.2f GB of gradients and optimizer state",
+        count, len(layers), frozen / 1e6, trainable / 1e6, frozen * 12 / 1e9,
+    )
+
+
 def run(config: DictConfig) -> None:
     configure_logging(config.logging.level)
     set_seed_everything(config.seed)
@@ -127,6 +158,10 @@ def run(config: DictConfig) -> None:
         cfg_model=config.model,
         cfg_optimizer=config.optimizer,
     )
+    freeze_layers = OmegaConf.select(config, "model.freeze_layers", default=0)
+    if freeze_layers:
+        freeze_lower_layers(model, freeze_layers)
+
     pretrained = OmegaConf.select(config, "model.pretrained", default=None)
     if pretrained:
         load_pretrained_transformer(

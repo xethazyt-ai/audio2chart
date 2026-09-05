@@ -3,18 +3,62 @@
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import contextmanager
-from typing import Iterator
+from pathlib import Path
+from typing import Any, Iterator
 
 import lightning as L
+import torch
 import wandb
 from lightning.pytorch.callbacks import LearningRateMonitor
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.loggers import CSVLogger
+from lightning.pytorch.plugins.io import TorchCheckpointIO
 from omegaconf import DictConfig, OmegaConf
 
 from modules.utils_train import LogGradientNorm
+
+
+logger = logging.getLogger(__name__)
+
+
+class DirectCheckpointIO(TorchCheckpointIO):
+    """Serialize checkpoints straight to disk instead of through a memory buffer.
+
+    Lightning's `_atomic_save` builds the entire checkpoint in a BytesIO before writing
+    it, so saving costs twice the checkpoint's size in RAM. This one is ~2.9 GB (245 M
+    parameters plus AdamW's two moments), and the four persistent dataloader workers each
+    hold up to 2 GB of cached audio at the same time. Two runs died at exactly this point,
+    once with a truncated zip ("unexpected pos ... vs ...") and once with a segfault --
+    different symptoms, same cause.
+
+    Writing to a sibling temporary file and renaming keeps the atomicity the buffer was
+    there to provide, and the file is checked for a plausible size before the rename so a
+    short write surfaces here rather than at resume time.
+    """
+
+    MINIMUM_BYTES = 1 << 20
+
+    def save_checkpoint(self, checkpoint: dict[str, Any], path, storage_options=None) -> None:
+        if storage_options is not None:
+            raise TypeError(
+                f"{type(self).__name__} does not accept storage_options={storage_options!r}"
+            )
+        destination = Path(path)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        temporary = destination.with_name(destination.name + ".partial")
+        try:
+            torch.save(checkpoint, temporary)
+            written = temporary.stat().st_size
+            if written < self.MINIMUM_BYTES:
+                raise RuntimeError(f"Checkpoint write produced only {written} bytes")
+            os.replace(temporary, destination)
+        except BaseException:
+            temporary.unlink(missing_ok=True)
+            raise
+        logger.info("Wrote checkpoint %s (%.2f GB)", destination, written / 1e9)
 
 
 def configure_logging(level: str) -> None:
@@ -86,6 +130,7 @@ def build_trainer(config: DictConfig, logger: object, monitor: str) -> L.Trainer
         **{name: value for name, value in limits.items() if value is not None},
         accelerator="gpu" if use_gpu else "cpu",
         devices=config.trainer.gpus if use_gpu else 1,
+        plugins=[DirectCheckpointIO()],
         enable_checkpointing=bool(config.trainer.save_run),
         callbacks=build_callbacks(config, monitor),
         log_every_n_steps=config.trainer.log_every_n_steps,
