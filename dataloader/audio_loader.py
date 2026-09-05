@@ -293,7 +293,7 @@ class ChunkedWaveformDataset(Dataset):
             start_seconds = start_sample / self.sample_rate
             end_seconds = end_sample / self.sample_rate
 
-            tokenized_chart = self.tokenizer.encode(note_list=notes)
+            tokenized_chart = self.tokenizer.encode(note_list=notes, resolution=resolution)
             #logger.info(f"[WORKER {worker_id}] Tokenized {len(tokenized_chart)} notes", extra={'worker_id': worker_id})
             tokenized_chart = self.tokenizer.format_seconds(
                 tokenized_chart, bpm_events, resolution=resolution, offset=offset

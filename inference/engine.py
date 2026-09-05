@@ -155,7 +155,8 @@ class Charter(nn.Module):
 
         # drop BOS + extract 'new' tokens for last chunk
         sequences = []
-        new_tokens = int((total_samples - starts[-1]) * 1000 / (target_sr * ms_resolution))
+        prev_end = starts[-2] + chunk_samples if len(starts) > 1 else 0
+        new_tokens = int((total_samples - prev_end) * 1000 / (target_sr * ms_resolution))
 
         for b in range(B):
             seq = ids[b, 1:]                                    # remove BOS

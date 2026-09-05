@@ -69,8 +69,14 @@ def build_callbacks(config: DictConfig, monitor: str, mode: str = "max") -> list
 
 def build_trainer(config: DictConfig, logger: object, monitor: str) -> L.Trainer:
     use_gpu = config.trainer.gpus > 0
+    limits = {
+        name: OmegaConf.select(config, f"trainer.{name}")
+        for name in ("limit_train_batches", "limit_val_batches")
+    }
     return L.Trainer(
         max_epochs=config.trainer.max_epochs,
+        max_steps=OmegaConf.select(config, "trainer.max_steps", default=-1),
+        **{name: value for name, value in limits.items() if value is not None},
         accelerator="gpu" if use_gpu else "cpu",
         devices=config.trainer.gpus if use_gpu else 1,
         enable_checkpointing=bool(config.trainer.save_run),
@@ -80,4 +86,5 @@ def build_trainer(config: DictConfig, logger: object, monitor: str) -> L.Trainer
         precision=config.trainer.precision,
         num_sanity_val_steps=config.trainer.num_sanity_val_steps,
         gradient_clip_val=config.trainer.gradient_clip_val,
+        accumulate_grad_batches=config.trainer.accumulate_grad_batches,
     )

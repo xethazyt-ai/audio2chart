@@ -12,6 +12,7 @@ from omegaconf import DictConfig, OmegaConf
 from chart.tokenizer import SimpleTokenizerGuitar
 from dataloader.audio_loader import create_chunked_audio_chart_dataloader
 from dataloader.utils_dataloader import split_json_entries_by_audio_raw
+from modules.pretrained import load_pretrained_transformer
 from modules.run_utils import build_trainer, configure_logging, experiment_logger
 from modules.trainer import WaveformTransformerDiscrete
 from modules.utils_train import set_seed_everything, validate_dataset
@@ -52,8 +53,12 @@ def load_data_splits(config: DictConfig) -> tuple[list[dict], list[dict]]:
     return _read_manifest(folder / "train.json"), _read_manifest(folder / "val.json")
 
 
-def build_dataloaders(config: DictConfig, train_files: list[dict], val_files: list[dict]):
-    tokenizer = SimpleTokenizerGuitar()
+def build_dataloaders(
+    config: DictConfig,
+    tokenizer: SimpleTokenizerGuitar,
+    train_files: list[dict],
+    val_files: list[dict],
+):
     difficulties = list(config.data.difficulties)
     instruments = list(config.data.instruments)
     validation = dict(
@@ -105,8 +110,9 @@ def build_dataloaders(config: DictConfig, train_files: list[dict], val_files: li
 def run(config: DictConfig) -> None:
     configure_logging(config.logging.level)
     set_seed_everything(config.seed)
+    tokenizer = SimpleTokenizerGuitar()
     train_files, val_files = load_data_splits(config)
-    train_loader, val_loader, vocab = build_dataloaders(config, train_files, val_files)
+    train_loader, val_loader, vocab = build_dataloaders(config, tokenizer, train_files, val_files)
     model = WaveformTransformerDiscrete(
         pad_token_id=vocab["<PAD>"],
         eos_token_id=vocab["<eos>"],
@@ -114,6 +120,18 @@ def run(config: DictConfig) -> None:
         cfg_model=config.model,
         cfg_optimizer=config.optimizer,
     )
+    pretrained = OmegaConf.select(config, "model.pretrained", default=None)
+    if pretrained:
+        load_pretrained_transformer(
+            model,
+            pretrained,
+            tokenizer,
+            jitter=OmegaConf.select(config, "model.pretrained_jitter", default=0.01),
+            seed=config.seed,
+            allow_partial=OmegaConf.select(
+                config, "model.pretrained_allow_partial", default=False
+            ),
+        )
     with experiment_logger(config, build_run_name(config)) as logger:
         build_trainer(config, logger, MONITORED_METRIC).fit(
             model,

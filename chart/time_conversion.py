@@ -126,7 +126,46 @@ def convert_notes_to_seconds(notes, bpm_events, resolution, offset=0.0):
 def time_to_tick(time_sec, bpm, resolution):
     return int(round(time_sec * bpm / 60.0 * resolution))
 
-def convert_notes_to_ticks(tokens_list, time_list, fixed_bpm=200, resolution=480):
+def seconds_to_tick(time_sec, bmp_segments, resolution, segment_times=None):
+    """
+    Convert an absolute time in seconds to a tick position
+
+    Inverse of tick_to_seconds(), so it honours a piecewise-constant tempo map
+    instead of assuming a single BPM for the whole song.
+
+    Args:
+        time_sec: The absolute time to convert
+        bmp_segments: Preprocessed BMP segments from preprocess_bpm_segments()
+        resolution: Ticks per quarter note (PPQ)
+
+    Returns:
+        Tick position
+    """
+    if not bmp_segments:
+        raise ValueError("bmp_segments cannot be empty")
+
+    times = segment_times if segment_times is not None else [seg[2] for seg in bmp_segments]
+    idx = bisect.bisect_right(times, time_sec) - 1
+
+    if idx < 0:
+        idx = 0
+
+    base_tick, bpm, base_time = bmp_segments[idx]
+    delta_ticks = (time_sec - base_time) * (bpm / 60.0) * resolution
+
+    return int(round(base_tick + delta_ticks))
+
+
+def convert_notes_to_ticks(tokens_list, time_list, fixed_bpm=200, resolution=480,
+                           bpm_events=None, snap=0, pad_token_id=34, tokenizer=None):
+    """
+    Place decoded tokens on the tick grid.
+
+    Passing bpm_events uses that tempo map instead of fixed_bpm; the caller must
+    write the same map into [SyncTrack] or the notes will not line up with the
+    audio. snap rounds each note to the nearest 1/snap note (e.g. snap=32 for
+    thirty-second notes), which is only meaningful once the grid is correct.
+    """
 
     attrs = {
         'is5': False,
@@ -134,11 +173,38 @@ def convert_notes_to_ticks(tokens_list, time_list, fixed_bpm=200, resolution=480
         'isS': False,
     }
 
+    if bpm_events:
+        segments = preprocess_bpm_segments(bpm_events, resolution)
+        segment_times = [segment[2] for segment in segments]
+
+        def to_tick(t):
+            return seconds_to_tick(t, segments, resolution, segment_times)
+    else:
+        def to_tick(t):
+            return time_to_tick(t, fixed_bpm, resolution)
+
+    grid = int(round(resolution * 4 / snap)) if snap else 0
+
     tick_notes = []
+    seen = set()
 
     for t, note in zip(time_list, tokens_list):
-        if note != 34:
-            tick = time_to_tick(t, fixed_bpm, resolution)
-            tick_notes.append((tick,note,0,attrs))
+        if note == pad_token_id:
+            continue
+        if tokenizer is not None and not tokenizer.is_note_token(note):
+            continue  # <bos>/<eos> or out of range
+        tick = to_tick(t)
+        if grid:
+            tick = int(round(tick / grid)) * grid
+            # snapping can collapse neighbouring tokens onto the same lane
+            if (tick, note) in seen:
+                continue
+            seen.add((tick, note))
+        if tokenizer is not None:
+            note_duration = tokenizer.sustain_ticks(note, resolution)
+            note_attrs = tokenizer.attrs_of(note)
+        else:
+            note_duration, note_attrs = 0, attrs
+        tick_notes.append((tick, note, note_duration, note_attrs))
 
     return tick_notes

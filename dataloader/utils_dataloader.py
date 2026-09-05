@@ -14,8 +14,18 @@ from chart.tokenizer import SimpleTokenizerGuitar
 
 
 logger = logging.getLogger(__name__)
-MAX_NOTES = 5000
-AUDIO_CANDIDATES = ("song.opus", "song.ogg", "guitar.opus", "guitar.ogg")
+# Upper bound on note events in one chart section. Note that lane 5 (forced) and lane 6
+# (tap) are separate events, and 47% of positions in this corpus carry a tap, so a dense
+# chart reaches this ceiling at roughly half as many playable notes as the number suggests.
+#
+# Measured over G:\Clone Hero Songs: at 5000 this filter silently dropped 2,971 of the
+# 11,621 charts that have audio -- 99.2% of everything missing from the manifest, and
+# precisely the densest, most informative charts. Their sizes run min 5,010 / median 8,192
+# / p95 29,872 / max 683,801; 50,000 recovers 2,907 of them (97.8%) while still excluding
+# the joke charts in the tail, which are not human-playable and would only teach noise.
+MAX_NOTES = 50000
+AUDIO_CANDIDATES = ("song.opus", "song.ogg", "song.mp3", "song.wav", "song.flac",
+                    "guitar.opus", "guitar.ogg", "guitar.mp3", "guitar.wav")
 
 
 def find_chart_files(root_folder: str | Path) -> list[str]:
@@ -31,6 +41,7 @@ def find_audio_files(
     instruments: Iterable[str],
     output_json: str | Path = "results/audio_dataset.json",
     skipped_json: str | Path = "results/audio_skipped.json",
+    max_notes: int = MAX_NOTES,
 ) -> tuple[str, str]:
     """Discover valid chart/audio pairs and write dataset manifests."""
     root = Path(root)
@@ -41,6 +52,8 @@ def find_audio_files(
     tokenizer = SimpleTokenizerGuitar()
     entries: list[dict[str, Any]] = []
     skipped: list[dict[str, str]] = []
+    empty_sections = 0
+    oversized_sections = 0
 
     for directory in sorted(path for path in root.rglob("*") if path.is_dir()):
         chart_path = directory / "notes.chart"
@@ -60,9 +73,18 @@ def find_audio_files(
             resolution = int(processor.song_metadata["Resolution"])
             offset = float(processor.song_metadata["Offset"])
             for section, notes in processor.notes.items():
-                if not 0 < len(notes) < MAX_NOTES:
+                if not notes:
+                    empty_sections += 1
                     continue
-                encoded = tokenizer.encode(notes)
+                if len(notes) >= max_notes:
+                    oversized_sections += 1
+                    skipped.append({
+                        "path": str(directory),
+                        "reason": "note_count_over_max",
+                        "error": f"{section} has {len(notes)} note events (max_notes={max_notes})",
+                    })
+                    continue
+                encoded = tokenizer.encode(notes, resolution=resolution)
                 tokenizer.format_seconds(encoded, processor.synctrack, resolution, offset)
                 entries.append({
                     "audio_path": str(audio_path),
@@ -79,6 +101,10 @@ def find_audio_files(
     _write_json(output_json, entries)
     _write_json(skipped_json, skipped)
     logger.info("Discovered %d entries; skipped %d directories", len(entries), len(skipped))
+    logger.info(
+        "Section filter dropped %d empty and %d oversized sections (max_notes=%d)",
+        empty_sections, oversized_sections, max_notes,
+    )
     return str(output_json), str(skipped_json)
 
 

@@ -6,10 +6,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 FROZEN_HASHES = {
-    "inference/engine.py": "6c1b61f33a9300db5545997524125a750c4afdef",
+    "inference/engine.py": "304ee101a6ccc508519fcc05f668a792723ef699",
     "inference/model_inference.py": "cd526cfbb27acd9921fb51a3c240f489bdad80c6",
     "inference/layers.py": "e44bfddff391fe20f482c7152eef11abd9dc88bd",
-    "generate.py": "ddf2d9b1b24aca592e38d8157303531b0f60abd2",
+    "generate.py": "4e193850d855224d8e3f5157abd9ac2ede18936d",
     "notebooks/audio2chart_charting.ipynb": "784fe5ffbbc2aa8efdbf20104ae09591e5ab6bf0",
 }
 

@@ -6,16 +6,47 @@ defaults:
 
 # Add audio encoder lr
 optimizer:
-  lr_audio: 1e-3
+  # Fine-tuning, not training from scratch: 1e-3 is the from-scratch LR and would wash
+  # the pretrained weights out in the first few hundred steps.
+  lr: 1e-4
+  lr_audio: 1e-3          # unused while model.freeze_encoder is true
+  warmup_steps: 500
+  max_steps: 200000
 
 data:
+  root_folder: G:/a2c_data
   window_seconds: 30
+  # 20 ms, not 40: 26.2% of 30 s windows in this corpus contain an interval shorter than
+  # 40 ms (only 8.8% are shorter than 20 ms), and discretize_time raises on collisions.
   grid_ms: 20
+  # ...which still leaves 8.8%; 'skip' drops those windows instead of killing the run.
+  error_policy: skip
 
 loader:
   augment: false
+  # 20 ms doubles the sequence to ~1500 tokens against the 40 ms checkpoint, on an 8 GB
+  # card holding a 1024-wide/16-layer decoder. Benchmark before raising either of these.
+  batch_size: 2
+  val_batch_size: 4
+  num_workers: 4
 
-seed: 42
+model:
+  # Fine-tune from the released 20 ms checkpoint. The transformer block below must keep
+  # matching its config.json or load_pretrained_transformer raises on shape mismatch.
+  pretrained: 3podi/charter-v1.0-20-M-best-acc
+  transformer:
+    d_model: 1024
+    d_ff: 4096
+    n_heads: 8
+    num_kv_heads: 8
+    n_layers: 16
+    compression: 2
+
+trainer:
+  # Defaults to false, which produces no checkpoints at all.
+  save_run: true
+  accumulate_grad_batches: 8
 
 tracking:
+  enabled: false
   tags: [audio]

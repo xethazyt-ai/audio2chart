@@ -62,7 +62,7 @@ def _validate_encoded_chart(
     notes = processor.notes[section]
     if not 0 < len(notes) < MAX_NOTES:
         raise ValueError(f"Section {section} has an unsupported note count: {len(notes)}")
-    encoded = tokenizer.encode(notes)
+    encoded = tokenizer.encode(notes, resolution=resolution)
     timed = tokenizer.format_seconds(encoded, processor.synctrack, resolution, offset)
     if len(timed) > 1:
         minimum_delta = min(
