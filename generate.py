@@ -48,6 +48,12 @@ def main():
         help="Copy Resolution and [SyncTrack] from an existing .chart file (exact)."
     )
     parser.add_argument(
+        "--style",
+        default=None,
+        help="Constrain generation to a charting style (e.g. wii, chording, one_hand). "
+             "Enforced by masking token ids at sampling time, so it cannot be violated.",
+    )
+    parser.add_argument(
         "--detect-tempo",
         action="store_true",
         help="Estimate the tempo from the audio instead of trusting --bpm."
@@ -97,10 +103,18 @@ def main():
 
     # Generate tokens
     print(f"Generating chart for: {args.audio_path}")
+    allowed_ids = None
+    if args.style:
+        from chart.style import allowed_tokens, describe, resolve
+        constraint = resolve(args.style)
+        allowed_ids = allowed_tokens(tokenizer, constraint)
+        print(f"Style {args.style!r}: {describe(tokenizer, constraint)}")
+
     seqs = model.generate(
         args.audio_path,
         temperature=args.temperature,
-        top_k=args.top_k
+        top_k=args.top_k,
+        allowed_ids=allowed_ids,
     )
     seqs = torch.cat(seqs).flatten().cpu().tolist()
 

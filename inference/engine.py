@@ -83,7 +83,8 @@ class Charter(nn.Module):
         temperature: float = -1.0,
         top_k: int = 0,
         class_id: Optional[int] = None,
-        device: str = "cuda" if torch.cuda.is_available() else "cpu"
+        device: str = "cuda" if torch.cuda.is_available() else "cpu",
+        allowed_ids: Optional[List[int]] = None,
     ) -> List[torch.Tensor]:
         """
         Fast batched generation with KV-cache + pre-allocation.
@@ -140,7 +141,7 @@ class Charter(nn.Module):
 
         self_cache = [None for _ in range(self.transformer.n_layers)]
         cross_cache = [None for _ in range(self.transformer.n_layers)]
-        sample_fn = self._make_sampler(temperature, top_k, device)
+        sample_fn = self._make_sampler(temperature, top_k, device, allowed_ids)
 
         for step in tqdm(range(full_seq_len), desc="Let's rock!"):
             cur_token = ids[:, step:step+1]                     # [B,1]
@@ -168,13 +169,36 @@ class Charter(nn.Module):
         return sequences
 
 
-    def _make_sampler(self, temperature: float, top_k: int, device: torch.device):
+    def _style_mask(self, allowed_ids, device: torch.device):
+        """A [1, V] boolean of what the style forbids, or None.
+
+        Applied before top-k so the two compose: top-k then picks among what the style
+        already permits, rather than the style vetoing whatever top-k happened to choose.
+        """
+        if allowed_ids is None:
+            return None
+        blocked = torch.ones(1, self.config.vocab_size, dtype=torch.bool, device=device)
+        index = torch.as_tensor(sorted(allowed_ids), dtype=torch.long, device=device)
+        if index.numel() == 0:
+            raise ValueError("Style permits no tokens; sampling would produce NaN")
+        blocked[0, index] = False
+        return blocked
+
+    def _make_sampler(self, temperature: float, top_k: int, device: torch.device,
+                      allowed_ids=None):
+        blocked = self._style_mask(allowed_ids, device)
+
         if temperature <= 0:                     # greedy
             def sample(logits):
+                if blocked is not None:
+                    logits = logits.masked_fill(blocked, -float('inf'))
                 return logits.argmax(dim=-1, keepdim=True)
             return sample
 
         def sample(logits):
+            if blocked is not None:
+                logits = logits.masked_fill(blocked, -float('inf'))
+
             if temperature != 1.0:
                 logits = logits / temperature
 
