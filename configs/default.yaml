@@ -17,6 +17,7 @@ loader:
   val_num_pieces: 1
   max_sample_retries: 5
   max_cache_gb: 20.0
+  chart_cache_size: 512
 
 optimizer:
   lr: 1e-3

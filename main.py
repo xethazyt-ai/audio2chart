@@ -99,6 +99,10 @@ def build_dataloaders(
         # Per dataloader, split across its workers. persistent_workers keeps the training
         # workers alive through validation, so the host holds two of these at once.
         max_cache_gb=config.loader.max_cache_gb,
+        # Bounded and lazy. Caching every chart up front cost ~18 GB across the main
+        # process and its spawned workers, because Windows pickles the dataset into
+        # each one. Each song is visited about once per epoch, so it bought little.
+        chart_cache_size=config.loader.chart_cache_size,
     )
     train_loader, vocab = create_chunked_audio_chart_dataloader(
         train_files,
