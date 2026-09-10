@@ -1,5 +1,6 @@
 import json
 import math
+from pathlib import Path
 from dataclasses import dataclass, asdict
 from typing import Optional, List
 
@@ -56,6 +57,19 @@ class Charter(nn.Module):
 
     @classmethod
     def from_pretrained(cls, repo_id: str):
+        """Load from a Hugging Face repo id, or from a local directory holding
+        config.json and pytorch_model.bin -- which is what export_checkpoint.py writes,
+        and the only way to run a model trained here rather than a released one."""
+        local = Path(repo_id)
+        if (local / "config.json").is_file() and (local / "pytorch_model.bin").is_file():
+            with (local / "config.json").open(encoding="utf-8") as handle:
+                cfg = TransformerConfig(**json.load(handle))
+            model = cls(cfg)
+            model.transformer.load_state_dict(
+                torch.load(local / "pytorch_model.bin", map_location="cpu")
+            )
+            return model
+
         cfg_path = hf_hub_download(repo_id, "config.json")
         with open(cfg_path) as f:
             cfg = TransformerConfig(**json.load(f))
@@ -85,6 +99,7 @@ class Charter(nn.Module):
         class_id: Optional[int] = None,
         device: str = "cuda" if torch.cuda.is_available() else "cpu",
         allowed_ids: Optional[List[int]] = None,
+        guidance: float = 0.0,
     ) -> List[torch.Tensor]:
         """
         Fast batched generation with KV-cache + pre-allocation.
@@ -143,6 +158,10 @@ class Charter(nn.Module):
         cross_cache = [None for _ in range(self.transformer.n_layers)]
         sample_fn = self._make_sampler(temperature, top_k, device, allowed_ids)
 
+        neg_emb = self._contrast_audio(audio_emb) if guidance > 0 else None
+        neg_self = [None for _ in range(self.transformer.n_layers)] if neg_emb is not None else None
+        neg_cross = [None for _ in range(self.transformer.n_layers)] if neg_emb is not None else None
+
         for step in tqdm(range(full_seq_len), desc="Let's rock!"):
             cur_token = ids[:, step:step+1]                     # [B,1]
 
@@ -150,6 +169,16 @@ class Charter(nn.Module):
                 cur_token, audio_emb, attention_mask=None, class_ids=class_ids,
                 step=step, use_cache=True, self_cache=self_cache, cross_cache=cross_cache
             )                                                   # logits: [B,1,V]
+
+            if neg_emb is not None:
+                # Same history, different music. What survives the subtraction is the
+                # part of the prediction this audio is responsible for; scaling it up
+                # is the whole point, because measurement says it is real but small.
+                neg_logits, neg_self, neg_cross = self.transformer(
+                    cur_token, neg_emb, attention_mask=None, class_ids=class_ids,
+                    step=step, use_cache=True, self_cache=neg_self, cross_cache=neg_cross
+                )
+                logits = logits + guidance * (logits - neg_logits)
 
             next_id = sample_fn(logits[:, -1])                  # [B,1]
             ids[:, step + 1] = next_id.squeeze(-1)
@@ -168,6 +197,24 @@ class Charter(nn.Module):
 
         return sequences
 
+
+    @staticmethod
+    def _contrast_audio(audio_emb: torch.Tensor) -> torch.Tensor:
+        """The negative branch for guidance: real music, but the wrong music.
+
+        A zeroed or mean embedding is the usual choice, but this model was never
+        trained with audio dropout, so it has no notion of "no audio" -- feeding it
+        one produces logits from far outside the training distribution, and guidance
+        would amplify that garbage rather than the conditioning. Every option here
+        stays on the manifold of embeddings the model actually saw.
+
+        With several chunks, the negative for each is a neighbouring chunk. With a
+        single chunk there is no neighbour, so the window is rolled halfway: still a
+        real passage of this song, just not the one being charted now.
+        """
+        if audio_emb.size(0) > 1:
+            return torch.roll(audio_emb, 1, dims=0)
+        return torch.roll(audio_emb, audio_emb.size(1) // 2, dims=1)
 
     def _style_mask(self, allowed_ids, device: torch.device):
         """A [1, V] boolean of what the style forbids, or None.

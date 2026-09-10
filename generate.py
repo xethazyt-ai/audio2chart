@@ -78,6 +78,13 @@ def main():
         help="Estimate the tempo from the audio instead of trusting --bpm."
     )
     parser.add_argument(
+        "--guidance",
+        type=float,
+        default=0.0,
+        help="Classifier-free guidance strength. 0 disables it; 1.5-3 amplifies how much "
+             "the audio steers the chart, at the cost of a second forward pass per step."
+    )
+    parser.add_argument(
         "--no-sync",
         action="store_true",
         help="Keep the model's own note timing instead of moving the first note onto "
@@ -146,6 +153,7 @@ def main():
         temperature=args.temperature,
         top_k=args.top_k,
         allowed_ids=allowed_ids,
+        guidance=args.guidance,
     )
     seqs = torch.cat(seqs).flatten().cpu().tolist()
 
