@@ -64,3 +64,29 @@ def test_there_is_always_room_for_a_lead_in():
     _, anchor_tick, anchor = beat_aligned_tempo_events(120.0, 0.0, 0.0, RESOLUTION)
     assert anchor_tick >= RESOLUTION
     assert anchor > 0.0
+
+
+def test_snapping_lands_on_the_beat_grid_the_map_defines():
+    """--snap was inert until the grid meant something.
+
+    The model emits on a 20 ms grid, which does not divide evenly into beats: at
+    140 BPM a generated eighth-note run came out 246/247/224 ticks apart against a
+    true 240. Snapping only fixes that if it rounds against the *song's* grid, which
+    is what the beat-aligned map now provides.
+    """
+    from chart.time_conversion import convert_notes_to_ticks
+
+    bpm, resolution, snap = 140.0, 480, 16
+    events, anchor_tick, anchor = beat_aligned_tempo_events(bpm, 0.145, 0.546, resolution)
+
+    beat = 60.0 / bpm
+    times = [anchor + i * beat / 2 for i in range(8)]      # eighth notes
+    jittered = [t + (0.012 if i % 2 else -0.009) for i, t in enumerate(times)]
+
+    notes = convert_notes_to_ticks([1] * len(jittered), jittered, resolution=resolution,
+                                   bpm_events=events, snap=snap, pad_token_id=0)
+    ticks = sorted({item[0] for item in notes})
+    grid = resolution * 4 // snap
+    assert ticks, "snapping dropped every note"
+    assert all(tick % grid == 0 for tick in ticks), f"off-grid ticks: {ticks}"
+    assert ticks[0] == anchor_tick, "the first note must stay on its beat line"
