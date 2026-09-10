@@ -140,3 +140,43 @@ def report(discovery: Discovery, top: int = 20) -> str:
         charts = discovery.charts_per_candidate[signature]
         lines.append(f"{count:>7}{charts:>8}  {render(signature):<26}{signature}")
     return "\n".join(lines)
+
+
+def bar_lift(observed_on_bar: int, instances: int, expected_rate: float) -> float:
+    """How much more often a shape starts on a bar line than its own charts predict.
+
+    This is the signal that separates an authored pattern from leftover residue, and it
+    has to be measured against the charts the shape actually occurs in. Pooling across the
+    corpus buries it: dense tapping charts put almost nothing on a bar line, so a global
+    comparison reads 7.4% against a 7.3% baseline and looks like noise. Controlled per
+    chart, known catalogue patterns run at a median 1.47x and up to 3.46x.
+
+    Measured on discovery candidates:
+
+        G G G G G G G G   2.97x   tremolo, real
+        O Y B R Y G       2.63x   the catalogue's split ladder, written two notes too long
+        G B R G O         0.09x
+        G B R G Y         0.08x
+
+    A shape that starts a bar twelve times *less* often than chance is not a pattern that
+    happens to be unlisted -- it is the middle of a longer figure whose front the catalogue
+    already claimed. Near-zero lift is the fragment signature.
+    """
+    if instances <= 0 or expected_rate <= 0:
+        return 0.0
+    return (observed_on_bar / instances) / expected_rate
+
+
+FRAGMENT_LIFT = 0.5
+"""Below this, a candidate is more likely residue than a pattern."""
+
+PATTERN_LIFT = 1.5
+"""Above this, a candidate behaves like the known catalogue entries."""
+
+
+def classify(lift: float) -> str:
+    if lift < FRAGMENT_LIFT:
+        return "fragment"
+    if lift >= PATTERN_LIFT:
+        return "pattern-like"
+    return "unclear"
