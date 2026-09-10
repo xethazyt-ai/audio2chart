@@ -4,6 +4,7 @@ from pathlib import Path
 
 from chart.bars import (
     bar_boundaries, bar_length_ticks, bars_for_chart, group_by_bar, parse_time_signatures,
+    soft_bar_cuts,
 )
 
 CHART = """[Song]
@@ -80,6 +81,39 @@ class BarTest(unittest.TestCase):
 
     def test_no_notes_gives_no_bars(self):
         self.assertEqual([], bars_for_chart(self.path, [], resolution=192))
+
+
+class SoftCutTest(unittest.TestCase):
+    """A bar line is a candidate boundary, confirmed only if the motion changes there."""
+
+    def test_tremolo_is_not_cut(self):
+        ticks = list(range(0, 1600, 100))              # crosses a 768-tick bar line
+        deltas = [0] * (len(ticks) - 1)                # same fret throughout
+        self.assertEqual([], soft_bar_cuts(ticks, deltas, [0, 768, 1536]))
+
+    def test_a_steady_run_is_not_cut(self):
+        ticks = list(range(0, 1600, 100))
+        deltas = [1] * (len(ticks) - 1)
+        self.assertEqual([], soft_bar_cuts(ticks, deltas, [0, 768, 1536]))
+
+    def test_an_oscillation_carrying_through_is_not_cut(self):
+        ticks = list(range(0, 1600, 100))
+        deltas = [1, -1] * ((len(ticks) - 1) // 2)
+        self.assertEqual([], soft_bar_cuts(ticks, deltas[:len(ticks) - 1], [0, 768, 1536]))
+
+    def test_a_change_of_shape_at_the_line_is_cut(self):
+        ticks = list(range(0, 1600, 100))
+        n = len(ticks) - 1
+        crossing = next(i for i in range(n) if ticks[i] < 768 <= ticks[i + 1])
+        deltas = [1] * (crossing + 1) + [-3] * (n - crossing - 1)
+        self.assertIn(crossing + 1, soft_bar_cuts(ticks, deltas, [0, 768, 1536]))
+
+    def test_bar_lines_outside_the_run_are_ignored(self):
+        ticks = [0, 100, 200]
+        self.assertEqual([], soft_bar_cuts(ticks, [1, 1], [0, 768, 1536]))
+
+    def test_a_single_note_has_no_cuts(self):
+        self.assertEqual([], soft_bar_cuts([0], [], [0, 768]))
 
 
 if __name__ == "__main__":
