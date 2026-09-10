@@ -89,22 +89,62 @@ def detect_tempo(y, sr, bpm_range=DEFAULT_BPM_RANGE, hop_length=256):
     return best
 
 
-def constant_tempo_events(bpm, phase, resolution, lead_in_bpm=120.0):
-    """Constant `bpm` whose grid lands on the beat at `phase` seconds.
+FIRST_ONSET_FLOOR = 0.25
+"""An onset weaker than this fraction of the strongest one is not the song starting."""
 
-    Tick 0 has to map to t=0, so the lead-in is absorbed by a first tempo segment
-    spanning [0, phase) -- the same trick the human charter used on Sapphire, and it
-    keeps Offset at 0. Beat positions repeat every period, so `phase` is pushed
-    forward whole periods until the lead-in is long enough to carry a sane BPM.
+
+def first_onset(y, sr, hop_length=256, floor=FIRST_ONSET_FLOOR):
+    """Time in seconds of the first real note in the audio.
+
+    Anchoring a chart on the earliest detected onset is fragile: a fade-in, a room
+    tone or a click before the count-in all register, and anchoring on one drags the
+    entire chart out of sync. Requiring a fraction of the strongest onset in the
+    track skips those. Backtracking then moves the answer from the envelope peak to
+    the attack that produced it, which is where a charter would put the note.
+    """
+    import librosa
+    import numpy as np
+
+    env = librosa.onset.onset_strength(y=y, sr=sr, hop_length=hop_length)
+    peaks = librosa.onset.onset_detect(
+        onset_envelope=env, sr=sr, hop_length=hop_length, backtrack=False
+    )
+    if peaks.size == 0:
+        return 0.0
+    strong = peaks[env[peaks] >= floor * env[peaks].max()]
+    if strong.size == 0:
+        strong = peaks
+    start = librosa.onset.onset_backtrack(strong[:1], env)
+    return float(librosa.frames_to_time(start, sr=sr, hop_length=hop_length)[0])
+
+
+def beat_aligned_tempo_events(bpm, phase, onset, resolution):
+    """Tempo map putting a beat line exactly on the audio's first note.
+
+    Robert's rule for syncing a generated chart, in his order: the first note lands
+    on a beat line; that line carries a BPM event at the song's real tempo; and the
+    tick-0 event -- the one Clone Hero starts every chart with -- is then whatever
+    value makes the lead-in last exactly as long as the audio takes to reach that
+    note.
+
+    The anchor is the *tracked beat* nearest the first onset rather than the onset
+    itself, so the grid stays locked to the music even when the first note is played
+    slightly ahead of or behind the beat. Beat tracking never identifies downbeats,
+    so a beat line is the strongest claim the analysis actually supports -- which is
+    also what Robert specified.
+
+    Returns (bpm_events, anchor_tick, anchor_seconds).
     """
     period = 60.0 / bpm
-    while phase < 0.5:
-        phase += period
+    anchor = phase + round((onset - phase) / period) * period
+    while anchor < period:          # a chart needs at least one beat of lead-in
+        anchor += period
 
-    beats = max(1, int(round(phase * lead_in_bpm / 60.0)))
-    intro_bpm = beats * 60.0 / phase
+    beats = max(1, int(round(anchor / period)))
+    lead_bpm = beats * 60.0 / anchor
 
-    return [
-        (0, int(round(intro_bpm * 1000))),
+    events = [
+        (0, int(round(lead_bpm * 1000))),
         (beats * resolution, int(round(bpm * 1000))),
     ]
+    return events, beats * resolution, anchor
