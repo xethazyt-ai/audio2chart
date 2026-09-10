@@ -28,3 +28,11 @@ def test_density_counts_notes_into_bins():
 
 def test_notes_past_the_end_are_dropped():
     assert list(note_density([0.5, 99.0], duration=2.0, bin_seconds=1.0)) == [1.0, 0.0]
+
+
+def test_a_handful_of_songs_cannot_resolve_a_small_effect():
+    """The trap this guards: three songs looked like enough, and is not."""
+    from chart.responsiveness import minimum_songs
+    assert minimum_songs(0.10) == 33
+    assert minimum_songs(0.05) > 100
+    assert minimum_songs(0.40) < 5

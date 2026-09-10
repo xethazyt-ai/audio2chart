@@ -20,6 +20,18 @@ even available given how loosely charts track audio energy.
 artefact of two envelopes both being smooth and mostly non-zero.
 
 A generated chart scoring at the floor is unconditioned no matter what its loss says.
+
+VALIDATED, with a limit that governs how it may be used. Over 60 full-length human
+charts (median 229 bins), a chart against its own audio scores mean +0.248 / median
++0.261, and against another song mean +0.054 / median +0.042. It wins on 46 of 60
+songs -- 77% against a 50% chance baseline, paired difference +0.194 -- so the signal
+is real and strongly significant in aggregate.
+
+But the per-song standard deviation is 0.284, larger than the effect itself. On
+roughly one song in four a real human chart scores worse against its own audio than
+against a stranger's. So this number means nothing for a single song, and any
+comparison built on a handful of songs is measuring noise. Use `minimum_songs` to
+size a comparison before running it.
 """
 
 from __future__ import annotations
@@ -28,6 +40,21 @@ import numpy as np
 
 BIN_SECONDS = 1.0
 """Coarse enough to survive onset-level disagreement, fine enough to see a chorus."""
+
+PER_SONG_SD = 0.284
+"""Measured spread of the paired score across 60 human charts."""
+
+
+def minimum_songs(effect: float, sigmas: float = 2.0, sd: float = PER_SONG_SD) -> int:
+    """How many songs a comparison needs before its result can mean anything.
+
+    The per-song spread is wider than the human-versus-stranger effect, so small
+    comparisons here reliably produce confident nonsense. Detecting a change of 0.1
+    at two standard errors takes 33 songs; three songs resolves nothing at all.
+    """
+    if effect <= 0:
+        raise ValueError("effect must be positive")
+    return max(2, int(np.ceil((sigmas * sd / effect) ** 2)))
 
 
 def onset_envelope(waveform: np.ndarray, sample_rate: int, bin_seconds: float = BIN_SECONDS,
