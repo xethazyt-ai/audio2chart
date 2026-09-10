@@ -24,8 +24,50 @@ logger = logging.getLogger(__name__)
 # / p95 29,872 / max 683,801; 50,000 recovers 2,907 of them (97.8%) while still excluding
 # the joke charts in the tail, which are not human-playable and would only teach noise.
 MAX_NOTES = 50000
+# Preferred audio filenames, most-specific first. Surveyed over G:\Clone Hero Songs:
+# 11,624 of 11,641 chart folders carry audio and these match 11,621 of them.
 AUDIO_CANDIDATES = ("song.opus", "song.ogg", "song.mp3", "song.wav", "song.flac",
-                    "guitar.opus", "guitar.ogg", "guitar.mp3", "guitar.wav")
+                    "song.m4a", "song.aac", "song.oga",
+                    "guitar.opus", "guitar.ogg", "guitar.mp3", "guitar.wav", "guitar.flac")
+
+AUDIO_EXTENSIONS = (".ogg", ".opus", ".mp3", ".wav", ".flac", ".m4a", ".aac", ".wma", ".oga")
+"""Extensions the fallback will accept. Deliberately excludes .webm -- the 105 in this
+library are all video.webm, not audio."""
+
+AUDIO_EXCLUDED_STEMS = ("preview", "video", "crowd")
+"""Never treat these as the song, whatever their extension.
+
+preview.* is a short clip -- 64 of them here. Picking one as the song audio would pair a
+full-length chart with ~30 seconds of sound and silently destroy the timing for that entry,
+which is exactly the class of error that is invisible until a model trains on it.
+"""
+
+
+def find_audio_for(directory: Path) -> Path | None:
+    """The audio file for a chart folder, or None.
+
+    Tries the known names first, then falls back to any audio file that is not a preview or
+    a video. The fallback recovers folders that name their audio after the song itself
+    (three in this library) without which those charts are simply dropped.
+
+    Stem-split songs (bass/drums/vocals/rhythm alongside guitar) are left to the ordered
+    candidates above: guitar.* wins, so the model sees isolated guitar for those. Only 10
+    folders here are affected, but it is worth knowing the training signal is not uniform.
+    """
+    for name in AUDIO_CANDIDATES:
+        candidate = directory / name
+        if candidate.is_file():
+            return candidate
+    try:
+        loose = sorted(
+            path for path in directory.iterdir()
+            if path.is_file()
+            and path.suffix.lower() in AUDIO_EXTENSIONS
+            and not path.stem.lower().startswith(AUDIO_EXCLUDED_STEMS)
+        )
+    except OSError:
+        return None
+    return loose[0] if loose else None
 
 
 def find_chart_files(root_folder: str | Path) -> list[str]:
@@ -59,10 +101,7 @@ def find_audio_files(
         chart_path = directory / "notes.chart"
         if not chart_path.is_file():
             continue
-        audio_path = next(
-            (directory / name for name in AUDIO_CANDIDATES if (directory / name).is_file()),
-            None,
-        )
+        audio_path = find_audio_for(directory)
         if audio_path is None:
             skipped.append({"path": str(directory), "reason": "missing_audio"})
             continue
