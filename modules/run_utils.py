@@ -107,16 +107,18 @@ def build_callbacks(config: DictConfig, monitor: str, mode: str = "max") -> list
             save_top_k=1,
             mode=mode,
             filename="best-checkpoint",
-            # A monitored checkpoint is only written when validation runs. On a corpus
-            # this size an epoch is over a day, so without save_last a crash twenty hours
-            # in would leave nothing to resume from. last.ckpt is written unconditionally.
-            save_last=True,
+            # save_last belongs on the step-based callback below, not here. With it on
+            # both, the two collide on last.ckpt and Lightning versions one to
+            # last-v1.ckpt -- a redundant 1.98 GB write every validation, and two files
+            # named "last" with different contents, which is worse than useless when
+            # choosing what to resume from.
+            save_last=False,
         ))
         # Validation is what makes the monitored checkpoint expensive (200 batches, ~13
-        # minutes), not the 1.9 GB write (~30 s). Tying resume points to it puts them
-        # hours apart, so a pause or a crash costs hours. This one saves last.ckpt on a
-        # plain step count with no validation: at ~8 s/batch, 200 batches is a resume
-        # point every ~27 minutes for about 2% overhead.
+        # minutes), not the 1.98 GB write (~45 s). Tying resume points to it puts them
+        # hours apart, so a pause or a crash costs hours. This one owns last.ckpt and
+        # writes it on a plain optimizer-step count with no validation -- note Lightning
+        # counts optimizer steps here, so the value is batches / accumulate_grad_batches.
         interval = OmegaConf.select(config, "trainer.checkpoint_every_n_steps", default=0)
         if interval:
             callbacks.append(L.pytorch.callbacks.ModelCheckpoint(
