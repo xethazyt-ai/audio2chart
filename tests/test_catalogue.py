@@ -1,6 +1,8 @@
 import unittest
 
-from chart.catalogue import CATALOGUE, collisions, parse, signature, signatures
+from chart.catalogue import (
+    CATALOGUE, body_signature, collisions, parse, signature, signatures, split_transition,
+)
 
 
 class CatalogueTest(unittest.TestCase):
@@ -42,6 +44,34 @@ class CatalogueTest(unittest.TestCase):
         original = signature(parse("O B R B O B R B O B R"))
         self.assertEqual(original, signature(parse(CATALOGUE["trip zig split R-B-O"])))
         self.assertNotEqual(original, signature(parse(CATALOGUE["trip zig G-R-Y"])))
+
+
+    def test_split_transition_separates_at_the_bar(self):
+        transition, body = split_transition("B Y | R Y B Y R")
+        self.assertEqual((3, 2), transition)
+        self.assertEqual((1, 2, 3, 2, 1), body)
+
+    def test_no_bar_means_everything_is_body(self):
+        transition, body = split_transition("G R Y")
+        self.assertEqual((), transition)
+        self.assertEqual((0, 1, 2), body)
+
+    def test_body_signature_excludes_the_transition(self):
+        # A transition note belongs to the join between patterns, not to either pattern's
+        # identity, so signing it makes the body findable only after that exact lead-in.
+        whole = signature(parse(CATALOGUE["trip zig R-Y-B"]))
+        body = body_signature(CATALOGUE["trip zig R-Y-B"])
+        self.assertNotEqual(whole, body)
+        self.assertLess(len(body), len(whole))
+
+    def test_body_signature_is_still_transposition_invariant(self):
+        self.assertEqual(body_signature(CATALOGUE["trip zig G-R-Y"]),
+                         body_signature(CATALOGUE["trip zig R-Y-B"]))
+
+    def test_body_is_a_suffix_of_the_whole_sequence(self):
+        for name, text in CATALOGUE.items():
+            transition, body = split_transition(text)
+            self.assertEqual(parse(text), transition + body, name)
 
 
 if __name__ == "__main__":

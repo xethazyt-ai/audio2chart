@@ -20,6 +20,30 @@ def parse(sequence: str) -> tuple[int, ...]:
     return tuple(FRETS[token] for token in cleaned.split() if token in FRETS)
 
 
+def split_transition(sequence: str) -> tuple[tuple[int, ...], tuple[int, ...]]:
+    """Separate the leading transition notes from the pattern body at the '|' marker.
+
+    Robert: a transition note is whatever leads from one pattern into the next, so it
+    belongs to the *join*, not to either pattern's identity. Which notes they are depends
+    on the pair being joined, so a body must be matchable without them.
+
+    Signing the whole written sequence -- transition included -- makes a pattern findable
+    only where it happens to be preceded by the exact transition the reference author wrote
+    down, which undercounts every entry that has one.
+
+    Returns (transition, body). Entries with no marker are all body.
+    """
+    if "|" not in sequence:
+        return (), parse(sequence)
+    head, _, tail = sequence.partition("|")
+    return parse(head), parse(tail)
+
+
+def body_signature(sequence: str) -> tuple[int, ...]:
+    """Transposition-invariant identity of the pattern body, transitions excluded."""
+    return signature(split_transition(sequence)[1])
+
+
 def signature(frets: tuple[int, ...]) -> tuple[int, ...]:
     """Transposition-invariant identity: consecutive differences."""
     return tuple(b - a for a, b in zip(frets, frets[1:]))
