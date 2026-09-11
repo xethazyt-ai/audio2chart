@@ -71,11 +71,22 @@ def configure_logging(level: str) -> None:
     )
 
 
+def _log_dir(config: DictConfig) -> str:
+    """Where checkpoints and CSV metrics are written.
+
+    Keep this off the drive holding the songs. A checkpoint here is 2.42 GB, and the
+    corpus drive measures 108 MB/s against 704 MB/s on the system drive -- 23 s versus
+    3.4 s per write on an idle disk, and worse than that during training, because the
+    dataloader is reading audio from the same spindle the write is saturating.
+    """
+    return str(OmegaConf.select(config, "trainer.log_dir", default="lightning_logs"))
+
+
 @contextmanager
 def experiment_logger(config: DictConfig, run_name: str) -> Iterator[object]:
     """Create an optional W&B logger and always finalize the active run."""
     if not config.tracking.enabled:
-        yield CSVLogger(save_dir="lightning_logs", name=run_name)
+        yield CSVLogger(save_dir=_log_dir(config), name=run_name)
         return
     wandb.init(
         project=config.tracking.project,
@@ -144,6 +155,7 @@ def build_trainer(config: DictConfig, logger: object, monitor: str) -> L.Trainer
         **{name: value for name, value in limits.items() if value is not None},
         accelerator="gpu" if use_gpu else "cpu",
         devices=config.trainer.gpus if use_gpu else 1,
+        default_root_dir=_log_dir(config),
         plugins=[DirectCheckpointIO()],
         enable_checkpointing=bool(config.trainer.save_run),
         callbacks=build_callbacks(config, monitor),

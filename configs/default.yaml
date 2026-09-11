@@ -41,12 +41,21 @@ trainer:
   max_steps: -1
   limit_train_batches: null
   limit_val_batches: null
-  # Batches between validations, and therefore between monitored checkpoints. null = once per epoch.
+  # CAREFUL: these two neighbours look symmetrical and count different things.
+  # Lightning's val_check_interval counts BATCHES; ModelCheckpoint's every_n_train_steps
+  # counts OPTIMIZER STEPS. Setting both to 100 with accumulate_grad_batches=8 ran one
+  # validation batch for every training batch and wrote a 2.42 GB checkpoint every 100
+  # batches, which took a 2.79 it/s run down to 0.82 it/s with the GPU at 16%.
+  # To validate every N optimizer steps, set this to N * accumulate_grad_batches.
   val_check_interval: null
-  # Batches between plain last.ckpt saves, independent of validation. 0 disables.
+  # Optimizer steps between plain last.ckpt saves, independent of validation. 0 disables.
   checkpoint_every_n_steps: 0
   # Lightning checkpoint to resume from; null starts fresh.
   resume_path: null
+  # Where checkpoints and CSV metrics go. Point this at a drive that is NOT holding the
+  # songs: each checkpoint is 2.42 GB, and writing it to the corpus drive both runs at
+  # 108 MB/s instead of 704 MB/s and stalls the dataloader reading audio beside it.
+  log_dir: lightning_logs
 
 tracking:
   enabled: true
