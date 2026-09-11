@@ -38,6 +38,12 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("checkpoint", type=Path)
+    parser.add_argument("--baseline", choices=("all", "tapping"), default="tapping",
+                        help="Human population to score charts against. Defaults to "
+                             "tapping, because that is what these runs train on: an "
+                             "all-styles median marks a correct tapping chart as broken "
+                             "on every metric (taps 0.96 against 0.19, density 21 NPS "
+                             "against 7.8).")
     parser.add_argument("--label", default=None)
     parser.add_argument("--charts", type=int, default=6)
     parser.add_argument("--export-to", type=Path, default=None)
@@ -125,7 +131,8 @@ def main():
 
     print(f"\n-- what do its charts look like? ({len(written)} charts) --")
     for path in written:
-        subprocess.run([sys.executable, str(ROOT / "evaluate_chart.py"), str(path)])
+        subprocess.run([sys.executable, str(ROOT / "evaluate_chart.py"), str(path),
+                        "--baseline", args.baseline])
 
 
 if __name__ == "__main__":

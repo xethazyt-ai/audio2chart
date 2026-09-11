@@ -44,7 +44,8 @@ sys.path.insert(0, str(ROOT))
 
 from chart.chart_processor import ChartProcessor
 from chart.discover import HUMAN_LIFT_MEAN, HUMAN_LIFT_SD, catalogue_lift
-from chart.metrics import PER_CHART_MEDIAN, profile_from_timed
+from chart.metrics import (BASELINES, TAPPING_REST_SECONDS,
+                          TAPPING_RESTS_PER_MINUTE, profile_from_timed)
 from chart.patterns import single_note_runs
 from chart.tokenizer import SimpleTokenizerGuitar
 
@@ -59,13 +60,23 @@ def parse_args():
     parser.add_argument("--section", default="ExpertSingle")
     parser.add_argument("--audio", type=Path, default=None,
                         help="Also score how well note density tracks the audio.")
+    parser.add_argument("--baseline", choices=sorted(BASELINES), default="all",
+                        help="Which human population to compare against. 'all' is 250 "
+                             "Expert charts of every style; 'tapping' is the 1454-song "
+                             "tapping split. Use 'tapping' for a model trained on the "
+                             "tapping subset -- against 'all' a correct tapping chart "
+                             "fails every metric, because taps run 0.96 against 0.19 "
+                             "and density 21 NPS against 7.8.")
     return parser.parse_args()
 
 
 REST_SECONDS = 0.25
 HUMAN_RESTS_PER_MINUTE = 34.0
 HUMAN_REST_SECONDS = 0.38
-"""Measured over 120 human Expert charts; only 1 of them has no rests at all."""
+"""Measured over 120 human Expert charts; only 1 of them has no rests at all.
+
+Tapping charts phrase differently -- 15.1 rests a minute, median 0.40 s -- so --baseline
+tapping swaps these too. See chart.metrics.TAPPING_PER_CHART_MEDIAN."""
 
 
 def phrasing(times: list[float]) -> tuple[float, float]:
@@ -132,17 +143,18 @@ def main():
     print("  NOTE: one chart does not characterise a model -- this model's output")
     print("        varies enormously by song. Score several before concluding.")
     print(f"  {profile.positions} positions over {profile.duration_seconds:.1f}s\n")
-    print(f"  {'metric':<16}{'chart':>10}{'human':>10}{'delta':>10}")
+    print(f"  {'metric':<16}{'chart':>10}{'human':>10}{'delta':>10}"
+          f"   (human = {args.baseline})")
     # Report the chord rate, not the single-note rate. A chart with no chords at all
     # reads as chord_1 1.000 against a human 0.872, and a relative tolerance on a
     # number that close to 1 waves through the most conspicuous defect there is.
+    baseline = BASELINES[args.baseline]
     for key, value in (("pct_chord", 1.0 - profile.chord_hist.get(1, 0.0)),
                        ("pct_tap", profile.pct_tap),
                        ("pct_forced", profile.pct_forced),
                        ("pct_sustain", profile.pct_sustain),
                        ("nps", profile.nps)):
-        target = (1.0 - PER_CHART_MEDIAN["chord_1"] if key == "pct_chord"
-                  else PER_CHART_MEDIAN[key])
+        target = (1.0 - baseline["chord_1"] if key == "pct_chord" else baseline[key])
         print(line(key, value, target, "{:.2f}" if key == "nps" else "{:.3f}"))
 
     runs = [[fret for _, fret in run] for run in single_note_runs(timed, tokenizer)]
@@ -154,13 +166,17 @@ def main():
     print(f"    coverage {coverage:.3f} against a chance floor of {floor:.3f}")
 
     per_minute, typical = phrasing([item[0] for item in timed])
+    rest_target = (TAPPING_RESTS_PER_MINUTE if args.baseline == "tapping"
+                   else HUMAN_RESTS_PER_MINUTE)
+    rest_length = (TAPPING_REST_SECONDS if args.baseline == "tapping"
+                   else HUMAN_REST_SECONDS)
     print("")
-    print(f"  rests/min       {per_minute:>10.1f}{HUMAN_RESTS_PER_MINUTE:>10.1f}"
-          f"{per_minute - HUMAN_RESTS_PER_MINUTE:>+10.1f}"
-          + ("  " if abs(per_minute - HUMAN_RESTS_PER_MINUTE) < 10 else " !"))
-    print(f"  typical rest    {typical:>10.2f}{HUMAN_REST_SECONDS:>10.2f}"
-          f"{typical - HUMAN_REST_SECONDS:>+10.2f}"
-          + ("  " if abs(typical - HUMAN_REST_SECONDS) < 0.3 else " !"))
+    print(f"  rests/min       {per_minute:>10.1f}{rest_target:>10.1f}"
+          f"{per_minute - rest_target:>+10.1f}"
+          + ("  " if abs(per_minute - rest_target) < 10 else " !"))
+    print(f"  typical rest    {typical:>10.2f}{rest_length:>10.2f}"
+          f"{typical - rest_length:>+10.2f}"
+          + ("  " if abs(typical - rest_length) < 0.3 else " !"))
 
     bad, total = overlapping_sustains(args.chart)
     print(f"\n  overlapping sustains {bad}/{total}"

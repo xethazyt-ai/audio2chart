@@ -66,6 +66,48 @@ PER_CHART_MEDIAN: dict[str, float] = {
     "nps": 7.8127,
 }
 
+# Same estimator, different population: the 1454-song tapping training split, unweighted
+# per chart.
+#
+# Use this whenever the model being judged was trained on the tapping subset, because
+# PER_CHART_MEDIAN above is measured across every charting style and a tapping overchart
+# is nothing like a typical chart:
+#
+#              tapping   all styles
+#   pct_tap     0.960       0.194
+#   nps        21.01        7.81
+#   pct_sustain 0.007       0.049
+#   pct_forced  0.0009      0.044
+#   rests/min  15.1        34.0
+#
+# Scored against the all-styles median, a correct tapping chart fails every one of those
+# -- taps five times too high, density near three times too high, sustains and forced
+# notes almost absent, half the rests. A human chart pulled straight out of the tapping
+# validation split reads that way, which is how this was noticed. Judging a
+# tapping-trained model against the wrong population would have condemned it for doing
+# exactly what it was trained to do.
+TAPPING_PER_CHART_MEDIAN: dict[str, float] = {
+    "chord_1": 0.9536,
+    "chord_2": 0.0280,
+    "chord_3": 0.0051,
+    "pct_tap": 0.9601,
+    "pct_forced": 0.0009,
+    "pct_sustain": 0.0067,
+    "lane_0": 0.1914,
+    "lane_2": 0.2503,
+    "lane_open": 0.0004,
+    "nps": 21.0105,
+}
+
+# Phrasing, same split and estimator. The all-styles figures are 34.0 and 0.38.
+TAPPING_RESTS_PER_MINUTE = 15.1
+TAPPING_REST_SECONDS = 0.40
+
+BASELINES = {
+    "all": PER_CHART_MEDIAN,
+    "tapping": TAPPING_PER_CHART_MEDIAN,
+}
+
 
 # What separates the four difficulties, measured over 120 songs charted at all four
 # levels -- same song, same charter, so the differences are difficulty itself.
