@@ -13,6 +13,8 @@ from omegaconf import DictConfig, OmegaConf
 from chart.tokenizer import SimpleTokenizerGuitar
 from dataloader.audio_loader import create_chunked_audio_chart_dataloader
 from dataloader.utils_dataloader import split_json_entries_by_audio_raw
+import torch
+
 from modules.pretrained import load_pretrained_transformer
 from modules.run_utils import build_trainer, configure_logging, experiment_logger
 from modules.trainer import WaveformTransformerDiscrete
@@ -181,6 +183,23 @@ def run(config: DictConfig) -> None:
                 config, "model.pretrained_allow_partial", default=False
             ),
         )
+    # Start from a checkpoint we produced, with a fresh optimizer. `resume_path` cannot
+    # do this: it restores the optimizer, the epoch and the step count, so a checkpoint
+    # taken past max_steps would stop immediately. What is wanted for a comparison run
+    # is the weights alone.
+    init_from = OmegaConf.select(config, "model.init_from", default=None)
+    if init_from:
+        path = Path(init_from)
+        if not path.is_file():
+            raise FileNotFoundError(f"model.init_from does not exist: {path}")
+        # weights_only=False executes pickled code; this is only ever pointed at a
+        # checkpoint produced locally, never a downloaded one.
+        state = torch.load(path, map_location="cpu", weights_only=False)["state_dict"]
+        missing, unexpected = model.load_state_dict(state, strict=False)
+        logging.getLogger(__name__).info(
+            "Initialised from %s (%d missing, %d unexpected)",
+            path, len(missing), len(unexpected))
+
     # An epoch here is over a day and the card runs at ~97% VRAM, so a run that dies part
     # way through is the expected case, not the exceptional one. `save_last` keeps a
     # last.ckpt beside the monitored best; point trainer.resume_path at it to continue.

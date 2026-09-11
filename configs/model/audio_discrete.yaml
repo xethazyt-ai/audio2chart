@@ -12,6 +12,10 @@ freeze_encoder: true
 # Declared here so it can be overridden normally -- reading it with a default is not
 # enough, Hydra refuses `model.input_noise=X` for a key the config does not define.
 input_noise: 0.0
+# A local checkpoint to take weights from, with a fresh optimizer.
+# Unlike trainer.resume_path this does not restore step count, so a
+# checkpoint taken past max_steps can still seed a new run.
+init_from: null
 use_processor: false
 sample_rate: 16000
 
