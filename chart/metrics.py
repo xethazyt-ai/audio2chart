@@ -31,6 +31,42 @@ OPEN_LANE = 7
 # unweighted mean, which is a different estimator: on a 40-chart sample it read pct_sustain
 # 0.080 against this 0.045, and nps 10.8 against 7.2. Both are correct for what they
 # measure. Compare like with like -- pooled against pooled, or per-chart against per-chart.
+# Measured over 250 Expert charts, unweighted per chart -- the estimator that matches a
+# ChartProfile, which is also one chart. Use this to judge a generated chart;
+# CORPUS_REFERENCE above is pooled over positions and answers a different question.
+#
+# Mean and median diverge sharply on pct_tap (0.317 vs 0.194) and pct_sustain (0.152 vs
+# 0.049) because chart style is skewed: a minority of charts are almost entirely taps
+# and drag the mean. The median is the better target for "a typical chart", and the gap
+# between the two is a reminder that a single generated chart cannot be scored against
+# a mean without accounting for that spread.
+PER_CHART_REFERENCE: dict[str, float] = {
+    "chord_1": 0.8073,
+    "chord_2": 0.1364,
+    "chord_3": 0.0482,
+    "pct_tap": 0.3172,
+    "pct_forced": 0.0869,
+    "pct_sustain": 0.1526,
+    "lane_0": 0.1743,
+    "lane_2": 0.2499,
+    "lane_open": 0.0271,
+    "nps": 10.1317,
+}
+
+PER_CHART_MEDIAN: dict[str, float] = {
+    "chord_1": 0.8717,
+    "chord_2": 0.0883,
+    "chord_3": 0.0099,
+    "pct_tap": 0.1942,
+    "pct_forced": 0.0437,
+    "pct_sustain": 0.0490,
+    "lane_0": 0.1677,
+    "lane_2": 0.2508,
+    "lane_open": 0.0021,
+    "nps": 7.8127,
+}
+
+
 CORPUS_REFERENCE: dict[str, float] = {
     "chord_1": 0.8726,
     "chord_2": 0.0891,
