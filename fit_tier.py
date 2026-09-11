@@ -54,6 +54,13 @@ def parse_args():
     parser.add_argument("--cache", type=Path, default=Path(r"G:\a2c_data\tier_features.json"))
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--folds", type=int, default=5)
+    parser.add_argument(
+        "--min-tier", type=int, default=0,
+        help="Drop charts at or below this tier. The label sets disagree most at the "
+             "bottom -- diff_guitar is shown in Clone Hero as a 0-6 star rating, so a "
+             "charter writing 4 may mean four stars or tier 4, and only values above 6 "
+             "are unambiguous. Passing 6 keeps the charts where the two scales cannot "
+             "be confused, at the cost of most of the data.")
     return parser.parse_args()
 
 
