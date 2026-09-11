@@ -36,3 +36,10 @@ def test_a_handful_of_songs_cannot_resolve_a_small_effect():
     assert minimum_songs(0.10) == 33
     assert minimum_songs(0.05) > 100
     assert minimum_songs(0.40) < 5
+
+
+def test_separating_generated_from_human_needs_a_large_sample():
+    """Measured human-versus-generated gap is +0.081, less than half the
+    human-versus-stranger effect the metric was validated on."""
+    from chart.responsiveness import minimum_songs
+    assert minimum_songs(0.081) > 45

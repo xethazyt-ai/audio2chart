@@ -42,6 +42,22 @@ are about three; they printed as 0.00 in a two-decimal histogram. Three overstat
 in one fault, each caught only by measuring the human baseline -- worth remembering
 before acting on any "it never does X" in these notes.
 
+## Guidance does not work (36 songs, settled)
+
+Classifier-free guidance with a wrong-song negative gives +0.042 +/- 0.045 on
+responsiveness -- 95% CI [-0.046, +0.129], sign test p = 0.405, helped 21 of 36 -- and
+doubles note density as a side effect (3575 -> 7087 notes). It is not a fix for fault 2.
+
+That is consistent with the conditioning ablation: you cannot amplify a signal the
+model barely uses. The audio has to be strengthened in training, not at inference.
+
+**The metric is weaker than its validation suggested.** Human charts beat generated
+ones by only +0.081 +/- 0.047, 95% CI [-0.012, +0.174] -- marginally non-significant at
+n=36, despite the ablation independently showing weak audio use. Separating generated
+from human reliably would need ~130 songs. I said at n=7 that "generated charts score
+near zero while humans track the music"; at full sample that is directional, not
+established.
+
 ## The good news
 
 The model's pattern vocabulary is human-level: lift +0.230 against a human mean +0.209
