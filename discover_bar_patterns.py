@@ -47,8 +47,11 @@ def parse_args():
     parser.add_argument("--styles", type=Path,
                         default=Path(r"G:\a2c_data\chart_styles.json"))
     parser.add_argument("--style", default="variety")
-    parser.add_argument("--bars", type=int, default=1, choices=(1, 2),
-                        help="Bars per candidate rep")
+    parser.add_argument("--beats", type=int, default=1, choices=(1, 2, 4),
+                        help="Beats per candidate rep. Robert's unit is the beat, not "
+                             "the measure -- one complete rep is a beat or two. "
+                             "Measures are four times too wide and return several "
+                             "figures concatenated.")
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--top", type=int, default=25)
     parser.add_argument("--chords", action="store_true",
@@ -136,11 +139,14 @@ def bar_signatures(chart_path: str, tokenizer, span: int, chords: bool = False,
     if not encoded:
         return []
     last = max(event[0] for event in encoded)
-    bars = group_by_bar(encoded, bar_boundaries(chart_path, resolution, last))
+    # Beat lines, not measure lines: one beat is `resolution` ticks by definition.
+    step = resolution * span
+    boundaries = list(range(0, last + step, step))
+    bars = group_by_bar(encoded, boundaries)
 
     out = []
-    for index in range(len(bars) - span + 1):
-        window = [event for bar in bars[index:index + span] for event in bar]
+    for index in range(len(bars)):
+        window = list(bars[index])
         if not (min_notes <= len(window) <= MAX_NOTES):
             continue
         positions = []
@@ -185,7 +191,7 @@ def main():
     scanned = 0
     for path in charts:
         try:
-            signatures = bar_signatures(path, tokenizer, args.bars,
+            signatures = bar_signatures(path, tokenizer, args.beats,
                                         chords=args.chords or args.only_chords,
                                         min_notes=args.min_notes,
                                         width=args.positions)
@@ -197,7 +203,7 @@ def main():
         for signature in signatures:
             counts[signature] += 1
 
-    print(f"scanned {scanned}; {len(counts)} distinct {args.bars}-bar shapes\n")
+    print(f"scanned {scanned}; {len(counts)} distinct {args.beats}-beat shapes\n")
     print(f"{'count':>7}{'charts':>8}  {'known':<7}{'notes':<26}signature")
     shown = 0
     chorded = args.chords or args.only_chords
