@@ -1,9 +1,13 @@
 """The audio cache has to hold entries and stay bounded.
 
-It was read but never written, so every sample re-read the whole file. That was
-survivable at 30 s windows with two pieces per item -- one read served 60 s of audio.
-At 15 s with one piece it serves 15 s, four times the I/O, and the GPU starved:
-utilisation swung 87% to 2% with the loader unable to keep up.
+It was read but never written, so every sample re-read the whole file. Filling it is
+a real but small win -- at 15 s windows with one piece a read serves a quarter of what
+it served at 30 s and two.
+
+An earlier version of this docstring blamed the dead cache for the GPU starving, with
+utilisation swinging 87% to 2%. That was wrong: profiled over 256 batches of the real
+config, train_dataloader_next is 0.1% of a step, and filling the cache moved throughput
+0.77 -> 0.82 it/s. The starvation came from checkpointing and validation, not here.
 
 Bounded by count, not by the max_cache_gb budget -- that budget is per worker and sized
 in gigabytes, which is how the chart cache once took the machine from 18 GB free to 0.5.

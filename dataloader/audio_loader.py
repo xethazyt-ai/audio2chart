@@ -272,11 +272,22 @@ class ChunkedWaveformDataset(Dataset):
         """Decoded audio for one song, reusing a recent read where possible.
 
         This cache was read but never written, so every sample re-read the whole file.
-        That was survivable at 30 s windows with two pieces per item -- one ~10.8 MB
-        read served 60 s of training audio, and Lightning's profiler put the whole
-        dataloader at 0.034% of a step. At 15 s windows with one piece it serves 15 s,
-        four times the I/O per sample, and the GPU starves: utilisation measured
-        swinging 87% -> 2% with the loader unable to keep up.
+        Populating it is worth doing -- at 15 s windows with one piece a read serves a
+        quarter of what it served at 30 s and two, so four times the I/O -- but it is a
+        small win, and an earlier version of this note claimed far more than that.
+
+        CORRECTION. That version said the dead cache was why "the GPU starves:
+        utilisation measured swinging 87% -> 2%". It was not. Lightning's profiler over
+        256 batches of the real training config puts train_dataloader_next at 0.00048 s
+        against a 0.358 s batch -- 0.1%. The loader has never been the bottleneck at
+        either window size, and filling this cache moved throughput 0.77 -> 0.82 it/s.
+
+        The 87% -> 2% swing was real but had another cause: val_check_interval counts
+        batches while ModelCheckpoint's every_n_train_steps counts optimizer steps, so a
+        run launched with both at 100 under accumulate_grad_batches=8 validated once per
+        training batch and wrote a 2.42 GB checkpoint to the 108 MB/s song drive every
+        100 batches. Fixing that took the same config from 0.82 to 2.79 it/s. The GPU was
+        idle waiting on disk, which looks identical from nvidia-smi.
 
         Bounded by count rather than by the `max_cache_gb` budget, because that budget
         is what made populating this risky: 6 GB per worker across four workers is the
