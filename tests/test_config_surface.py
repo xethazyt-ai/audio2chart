@@ -92,3 +92,30 @@ class OverridableKnobTests(unittest.TestCase):
         with initialize_config_dir(version_base=None, config_dir=str(CONFIG_DIR)):
             cfg = compose(config_name="audio")
         self.assertEqual(cfg.model.input_noise, 0.0)
+
+
+class ActiveModelConfigTests(unittest.TestCase):
+    """configs/audio.yaml composes `model: audio_codec`, not audio_discrete.
+
+    Editing the wrong one is silent: the file parses, the value looks set, and nothing
+    reaches a run. It happened once -- a freeze_encoder change went into
+    audio_discrete.yaml and was reported as a fix when audio_codec had already had the
+    value for months.
+    """
+
+    def _model(self, *overrides):
+        from hydra import compose, initialize_config_dir
+
+        with initialize_config_dir(version_base=None, config_dir=str(CONFIG_DIR)):
+            return compose(config_name="audio", overrides=list(overrides)).model
+
+    def test_every_knob_reaches_the_composed_config(self):
+        model = self._model()
+        for key in ("freeze_encoder", "input_noise", "init_from", "freeze_layers"):
+            self.assertIn(key, model, f"{key} is not in the composed model config")
+
+    def test_init_from_can_be_overridden(self):
+        self.assertEqual("/x.ckpt", self._model("model.init_from=/x.ckpt").init_from)
+
+    def test_the_encoder_is_frozen_in_the_active_config(self):
+        self.assertTrue(self._model().freeze_encoder)
