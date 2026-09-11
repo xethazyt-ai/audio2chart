@@ -29,11 +29,27 @@ data:
   # Robert's own "yax03 - Down" has gaps down to 7.3 ms. The 82% being dropped is the
   # fast tapping that defines the overchart style we want to learn.
   #
-  #   grid  window  tokens  usable windows
-  #   20ms    30s     1502           18.2%
-  #   10ms    30s     3002           95.3%   over max_length 2048
-  #   10ms    15s     1502           97.2%   <-- this
-  #    8ms    15s     1877           99.2%
+  # Those figures come from 120 hand-picked tapping charts. Re-measured over the whole
+  # 1454-song tapping training split the picture is less dramatic but points the same
+  # way, and this is the population that actually trains:
+  #
+  #   grid  window  tokens  usable  songs 100%  songs dropped
+  #   20ms    30s     1502   59.9%        36%     293
+  #   10ms    15s     1502   97.0%        80%       7   <-- this
+  #    8ms    15s     1877   98.6%        90%       3
+  #    8ms    12s     1502   98.8%        90%       3
+  #    6ms    12s     2002   99.5%        95%       1
+  #    5ms    10s     2002   99.6%        96%       0
+  #
+  # Note the fourth row. 8 ms at a 12 s window costs exactly the same 1502 tokens as the
+  # setting in use and is strictly better data -- 97.0% -> 98.8% of windows, and the
+  # share of songs with no unusable window at all goes 80% -> 90%. The residual loss is
+  # concentrated in the fastest charts, which are the ones this project cares about: 25
+  # songs are below 50% usable at 10 ms.
+  #
+  # It has not been taken because changing the grid invalidates the validation cache and
+  # the corpus needs revalidating (~10 min), and any run in flight is wasted. It is the
+  # obvious change to make at the start of the next run rather than during one.
   #
   # It is also a sync fault at 20 ms: +/-10 ms of quantisation error where notes sit
   # 18 ms apart.

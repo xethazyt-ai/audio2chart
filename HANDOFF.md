@@ -80,6 +80,27 @@ ordering is what a correct sign looks like. It holds.
 Also checked: only 2 of 1454 charts outlast their audio, both by 0.02 s. Silence-padded
 windows with real note targets are not a problem in this corpus.
 
+**The grid could still go finer for free.** Measured over the whole 1454-song tapping
+split rather than the 120 hand-picked charts the original decision used:
+
+| grid | window | tokens | windows usable | songs 100% | songs dropped |
+|---|---|---|---|---|---|
+| 20 ms | 30 s | 1502 | 59.9% | 36% | 293 |
+| 10 ms | 15 s | 1502 | 97.0% | 80% | 7 |
+| **8 ms** | **12 s** | **1502** | **98.8%** | **90%** | **3** |
+| 6 ms | 12 s | 2002 | 99.5% | 95% | 1 |
+
+8 ms at 12 s costs the identical 1502 tokens and is strictly better data. Not taken
+because changing the grid invalidates the validation cache and wastes any run in
+flight — it is a start-of-next-run change. Note also that the "18.2% usable at 20 ms"
+figure quoted everywhere came from those 120 charts; on the training split it is 59.9%.
+The change was still right, but the smaller number does not describe this corpus.
+
+The loader retries a window that collides and draws another: 197 retries over ~5000
+batches in Run A, 189 resolved on the second attempt, zero exhausted. Working as
+designed, but it means the 3% of unusable windows are silently skipped rather than
+reported, and they concentrate in the fastest 25 songs.
+
 ---
 
 ## Training runs in flight
