@@ -6,10 +6,20 @@ where Through The Fire & Flames is single digits and Schmoo's World is around 24
 
 Two cautions built into the output rather than left implicit:
 
+*The labels are noisy, and measurably so.* There are two sources -- tier named in a
+setlist folder (801 charts) and `diff_guitar` in song.ini (10,152 charts) -- and on the
+439 charts carrying both they agree exactly 18% of the time and within two tiers 42%.
+There is no systematic offset to correct: the median difference is 0. So this is
+disagreement between charters, not two scales needing alignment, and it caps how
+accurate any model fit on these labels can be. Reporting held-out error below ~2 tiers
+would be measuring the noise, not the difficulty.
+
+`diff_guitar` carries its own ambiguity: Clone Hero shows it as a 0-6 star rating, so
+some charters set it that way while others use the community tier scale. Values above 6
+are unambiguous; at or below, the label may mean either.
+
 *The labels come from different setlist authors*, so tier 8 in one pack need not mean
-tier 8 in another. The report breaks error down by pack, because a model that fits well
-within packs and badly across them means the scales disagree and need calibrating
-against each other, not that the features are wrong.
+tier 8 in another. The report breaks error down by pack for that reason.
 
 *Held-out error is the only number worth reading.* Fitting ten features to 801 points
 will look excellent in-sample whatever the truth is.
@@ -91,6 +101,8 @@ def solve(matrix: list[list[float]], target: list[float], ridge: float = 1e-3):
 def main():
     args = parse_args()
     labels = json.loads(args.labels.read_text(encoding="utf-8"))
+    if args.min_tier:
+        labels = [row for row in labels if row["tier"] > args.min_tier]
     if args.limit:
         labels = labels[:args.limit]
 
