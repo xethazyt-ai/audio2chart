@@ -22,7 +22,9 @@ class ExportTrustTests(unittest.TestCase):
              mock.patch.object(export_checkpoint, "TransformerConfig"), \
              mock.patch.object(Path, "open", mock.mock_open(read_data="{}")), \
              mock.patch.object(export_checkpoint, "json") as js:
-            js.load.return_value = {}
+            # The exporter now refuses a config without the timing fields, since a
+            # model exported with the wrong grid emits the wrong number of tokens.
+            js.load.return_value = {"grid_ms": 10, "window_seconds": 15.0}
             load.return_value = {}
             try:
                 export_checkpoint.export_checkpoint(

@@ -35,6 +35,18 @@ def export_checkpoint(checkpoint_path: Path, config_path: Path, output_dir: Path
     """Validate and export weights in the format consumed by Charter."""
     with config_path.open(encoding="utf-8") as stream:
         config_data = json.load(stream)
+
+    # grid_ms and window_seconds decide how many tokens the decoder emits, so a model
+    # exported with the wrong pair generates nonsense rather than failing. They used to
+    # be implicit -- grid_ms defaulted to 20 and the window was hardcoded to 30 in the
+    # engine -- which was survivable only while nothing changed them.
+    missing = [key for key in ("grid_ms", "window_seconds") if key not in config_data]
+    if missing:
+        raise ValueError(
+            f"{config_path} is missing {', '.join(missing)}. The exported model has to "
+            "carry the grid and window it was trained on; defaulting them silently "
+            "produces a model that emits the wrong number of tokens."
+        )
     config = TransformerConfig(**config_data)
 
     # Lightning's save_hyperparameters() stores the whole Hydra config in the checkpoint, so
@@ -45,7 +57,11 @@ def export_checkpoint(checkpoint_path: Path, config_path: Path, output_dir: Path
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=not trust)
     transformer_state = extract_transformer_state_dict(checkpoint)
 
-    inference_model = TransformerDecoderAudioConditioned(**config_data)
+    # The inference transformer takes architecture arguments only; the timing fields
+    # travel in config.json for the engine to read.
+    architecture = {k: v for k, v in config_data.items()
+                    if k not in ("grid_ms", "window_seconds")}
+    inference_model = TransformerDecoderAudioConditioned(**architecture)
     try:
         inference_model.load_state_dict(transformer_state, strict=True)
     except RuntimeError as error:

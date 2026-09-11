@@ -1,5 +1,4 @@
 import json
-import math
 from pathlib import Path
 from dataclasses import dataclass, asdict
 from typing import Optional, List
@@ -35,6 +34,12 @@ class TransformerConfig:
     use_flash: bool = False
     codebook_size: int = 128,
     grid_ms: int = 20
+    # Seconds of audio per decoded chunk. Must match what the model was trained on:
+    # the decoder emits window_seconds * 1000 / grid_ms tokens, and asking a model
+    # trained on 1502 for 3002 produces nonsense rather than an error. It was hardcoded
+    # to 30 here while the trainer read it from config, so changing one broke the other
+    # silently.
+    window_seconds: float = 30.0
 
 
 # ------------------------------------------------------------------
@@ -112,8 +117,8 @@ class Charter(nn.Module):
         input_values, padding_mask = self._read_audio(audio_path, device)  # [1,1,T]
         total_samples = input_values.size(-1)
         target_sr = 24000
-        chunk_sec = 30
-        chunk_samples = chunk_sec * target_sr
+        chunk_sec = float(self.config.window_seconds)
+        chunk_samples = int(chunk_sec * target_sr)
         ms_resolution = self.config.grid_ms
 
         if total_samples < chunk_samples:

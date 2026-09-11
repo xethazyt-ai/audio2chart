@@ -20,18 +20,33 @@ optimizer:
 
 data:
   root_folder: G:/a2c_data
-  window_seconds: 30
-  # 20 ms, not 40: 26.2% of 30 s windows in this corpus contain an interval shorter than
-  # 40 ms (only 8.8% are shorter than 20 ms), and discretize_time raises on collisions.
-  grid_ms: 20
-  # ...which still leaves 8.8%; 'skip' drops those windows instead of killing the run.
+  # 10 ms at 15 s, not 20 ms at 30 s. Both are 1502 tokens, so this costs nothing, and
+  # it is the difference between the model seeing the tapping charts and not.
+  #
+  # discretize_time bins notes at grid_ms and a window with two notes in one bin is
+  # discarded. Measured over 120 tapping charts: 22.8% of note gaps are shorter than
+  # 20 ms, 99% of charts contain at least one, and only 18.2% of 30 s windows survive.
+  # Robert's own "yax03 - Down" has gaps down to 7.3 ms. The 82% being dropped is the
+  # fast tapping that defines the overchart style we want to learn.
+  #
+  #   grid  window  tokens  usable windows
+  #   20ms    30s     1502           18.2%
+  #   10ms    30s     3002           95.3%   over max_length 2048
+  #   10ms    15s     1502           97.2%   <-- this
+  #    8ms    15s     1877           99.2%
+  #
+  # It is also a sync fault at 20 ms: +/-10 ms of quantisation error where notes sit
+  # 18 ms apart.
+  window_seconds: 15
+  grid_ms: 10
+  # A few windows still collide even at 10 ms; 'skip' drops those instead of failing.
   error_policy: skip
 
 loader:
   augment: false
   # The tensor the model sees holds batch_size * num_pieces sequences, not batch_size:
   # _collate_batch_impl flattens num_pieces windows out of every song into the batch. At
-  # grid_ms 20 each window is 1502 tokens (30 s / 20 ms, + bos/eos, under max_length 2048),
+  # grid_ms 10 each window is 1502 tokens (15 s / 10 ms, + bos/eos, under max_length 2048),
   # through a 1024-wide, 16-layer decoder. The repo defaults (4 x 6 train, 64 x 1 val)
   # would be 24 and 64 sequences per step -- certain OOM on this card.
   #
