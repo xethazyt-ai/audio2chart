@@ -35,7 +35,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
-from chart.catalogue import CATALOGUE, body_signature, parse, signature
+from chart.catalogue import (CATALOGUE, chord_signature, entry_signature,
+                            is_chorded_entry, positions, signature)
 from chart.chart_processor import ChartProcessor
 from chart.tokenizer import SimpleTokenizerGuitar
 
@@ -53,10 +54,19 @@ def parse_args():
 
 
 def occurrences(charts, tokenizer):
-    """How many charts contain each catalogue body, matched inside beats."""
+    """How many charts contain each catalogue body, matched inside beats.
+
+    Signatures come from `entry_signature`, which dispatches on whether the entry
+    contains a chord. Using the single-note `body_signature` for everything silently
+    dropped every chorded entry: `parse` looks up one letter at a time, so a token like
+    'RB' matches nothing and 'RB RYB RB' signs as the empty tuple. The four chord
+    entries then fell below the len >= 2 filter and were never scanned at all -- so the
+    report said "ABSENT: none" while never having looked for the tap-chord patterns
+    Robert specifically asked to have in here.
+    """
     bodies = {}
     for name, text in CATALOGUE.items():
-        sig = body_signature(text)
+        sig = entry_signature(text)
         if len(sig) >= 2:
             bodies.setdefault(sig, []).append(name)
 
@@ -74,16 +84,32 @@ def occurrences(charts, tokenizer):
         except Exception:
             continue
         scanned += 1
-        frets = []
+        # Two parallel readings of the same chart. `frets` keeps only single notes, so a
+        # chord breaks a run -- which is right for single-note entries. `shapes` keeps
+        # every position including chords, which is what a chorded signature needs.
+        frets, shapes = [], []
         for event in encoded:
             lanes = tokenizer.reverse_chord.get(
                 event[1] // (tokenizer.N_FLAG * tokenizer.N_SUSTAIN), ())
-            frets.append(lanes[0] if len(lanes) == 1 and lanes[0] <= 4 else None)
+            playable = tuple(lane for lane in lanes if lane <= 4)
+            frets.append(playable[0] if len(playable) == 1 else None)
+            shapes.append(playable or None)
         deltas = []
         for a, b in zip(frets, frets[1:]):
             deltas.append(b - a if a is not None and b is not None else None)
+
         here = set()
-        for sig in bodies:
+        for sig, names in bodies.items():
+            if any(is_chorded_entry(CATALOGUE[name]) for name in names):
+                width = len(sig)              # chord_signature has one entry per position
+                for start in range(len(shapes) - width + 1):
+                    chunk = shapes[start:start + width]
+                    if None in chunk:
+                        continue
+                    if chord_signature(list(chunk)) == sig:
+                        here.add(sig)
+                        break
+                continue
             width = len(sig)
             for start in range(len(deltas) - width + 1):
                 chunk = deltas[start:start + width]
@@ -111,7 +137,7 @@ def main():
     print("DUPLICATE NAMES (same body under more than one name)")
     exact = collections.defaultdict(list)
     for name, text in CATALOGUE.items():
-        exact[tuple(parse(text))].append(name)
+        exact[tuple(positions(text))].append(name)
     shown = 0
     for names in exact.values():
         if len(names) > 1:

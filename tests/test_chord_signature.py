@@ -36,6 +36,31 @@ class ChordSignatureTests(unittest.TestCase):
         self.assertTrue(is_chorded(chord_signature([(0, 2), (0, 1, 2)])))
         self.assertFalse(is_chorded(chord_signature([(0,), (1,), (2,)])))
 
+    def test_every_chorded_entry_survives_a_signature_based_filter(self):
+        """A chorded entry must sign to something a pattern search can use.
+
+        `parse` resolves one letter at a time, so a chord token like 'RB' matches no
+        fret and 'RB RYB RB' signs as the empty tuple. Anything keyed on the single-note
+        signature therefore collapsed all four chorded entries together and then dropped
+        them below its `len(sig) >= 2` filter -- which is how audit_catalogue reported
+        them as one duplicate body and simultaneously never searched for any of them,
+        while printing "ABSENT: none".
+        """
+        from chart.catalogue import CATALOGUE, entry_signature, is_chorded_entry
+
+        chorded = {name: text for name, text in CATALOGUE.items()
+                   if is_chorded_entry(text)}
+        self.assertTrue(chorded, "the catalogue is supposed to hold tap-chord patterns")
+
+        seen = {}
+        for name, text in chorded.items():
+            sig = entry_signature(text)
+            self.assertGreaterEqual(
+                len(sig), 2, f"{name} signs too short to be searchable: {sig!r}")
+            self.assertNotIn(sig, seen,
+                             f"{name} collides with {seen.get(sig)}")
+            seen[sig] = name
+
     def test_empty_input_is_empty(self):
         self.assertEqual((), chord_signature([]))
 
