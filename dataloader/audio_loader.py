@@ -263,6 +263,16 @@ class ChunkedWaveformDataset(Dataset):
         return False
 
     def _load_audio_file(self, audio_path: str) -> Tuple[torch.Tensor, int]:
+        # NOTE: _audio_cache is read here and cleared in _should_clear_cache, but
+        # nothing ever writes to it, so it is always empty and every call re-reads the
+        # file. That also means `max_cache_gb` and _estimate_chunk_size size a cache
+        # that does not exist -- tuning that knob has no effect on anything.
+        #
+        # Left inert deliberately. Lightning's profiler puts the whole dataloader at
+        # 0.034% of a training step (0.0037s against 7.5s), so there is nothing to win
+        # by populating it, and populating it would allocate up to max_cache_gb per
+        # worker across four workers -- the host-RAM exhaustion that the chart cache
+        # already caused once on this machine.
         if audio_path in self._audio_cache:
             return self._audio_cache[audio_path]
         
