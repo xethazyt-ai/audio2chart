@@ -159,11 +159,30 @@ activated.
 
 ## Decisions waiting for you
 
-- **The next training run's config.** The evidence now points at
-  `train_num_pieces: 1` with `accumulate_grad_batches: 8`, which keeps the effective
-  batch and stays under the 8 GiB cliff. Whether `freeze_layers` can also go to 0 at
-  one sequence is being measured; at two sequences it was a false economy, buying
-  decoder capacity and paying for it in paging.
+- **The next training run's config.** Measured end to end in the real pipeline:
+
+        loader.train_num_pieces: 1          (was 2)
+        trainer.accumulate_grad_batches: 8  (was 4)
+        model.freeze_layers: 4              (was 8)
+
+  Same eight sequences per optimizer step, about 9.4x faster (3.2s against 30.4s),
+  and 45% more trainable parameters -- layers 4-7, the lower blocks feeding the audio
+  cross-attention. Epoch time goes from roughly 22 hours to under 3.
+
+  | pieces 1 x accum 8 | per batch | per update | trainable | VRAM |
+  |---|---|---|---|---|
+  | freeze 8 | 0.380s | 3.0s  | 121.1M | 6259 MiB |
+  | freeze 4 | 0.404s | 3.2s  | 175.7M | ~7950 MiB |
+  | freeze 0 | 2.0s   | 16.8s | 230.2M | 7947 MiB, paging |
+  | *current* | *7.6s* | *30.4s* | *121.1M* | *7950 MiB, paging* |
+
+  freeze 4 held 1.79 -> 2.00 it/s rising over 25 optimizer steps with flat VRAM, so
+  it is not fragmenting. freeze 0 has the most capacity and is 5x slower: past the
+  8 GiB ceiling, capacity is paid for in PCIe round-trips rather than parameters.
+  If a long run ever does degrade, freeze 8 is the safe fallback with 1.7 GB spare.
+
+  I have not edited configs/audio.yaml. The numbers make the case but committing you
+  to a multi-day run is your call.
 - **Audio dropout for real CFG.** Current guidance uses a wrong-song negative because
   the model has no null-audio concept. Training with ~10% audio dropout would give it
   one and make guidance considerably stronger. Cheap to add, needs a retrain.
