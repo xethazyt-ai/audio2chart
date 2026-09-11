@@ -118,6 +118,9 @@ Snapping can round two adjacent tokens on the same lane onto the same tick; dupl
 | `--sync-from` | none | copy `Resolution` + `[SyncTrack]` from an existing `.chart` |
 | `--detect-tempo` | off | estimate tempo from the audio |
 | `--snap` | `0` (off) | snap notes to the nearest 1/N note |
+| `--guidance` | `0` (off) | classifier-free guidance; costs a second forward pass per step |
+| `--pad-bias` | `0` | added to the pad token's logit, shifting note density |
+| `--max-parallel-chunks` | `4` | 30 s chunks decoded at once; lower if generation is unexpectedly slow |
 | `--bpm` | `200` | fixed BPM, used only without `--sync-from` / `--detect-tempo` |
 | `--resolution` | `480` | ticks per quarter note (overridden by `--sync-from`) |
 | `--name` `--artist` `--album` `--genre` `--charter` | derived | chart metadata |
@@ -127,6 +130,30 @@ Full example:
 
 ```bash
 python generate.py song.wav --name "Song Title" --artist "Artist" --album "Album" --genre "Metal" --detect-tempo --snap 32 --output ./out
+```
+
+### Scoring a generated chart
+
+`evaluate_chart.py` compares a chart against what human charters actually do, because
+"is this any good?" is several questions and note accuracy answers none of them:
+
+```bash
+python evaluate_chart.py out/notes.chart
+```
+
+It reports what the chart is made of (chord, tap, forced and sustain rates against the
+per-chart corpus median), whether the shapes are real guitar patterns (catalogue
+coverage above that chart's own chance floor), how it is paced (rests per minute), and
+whether it breaks universal rule 1. Pass `--audio` to also score how well note density
+tracks the music -- meaningful in aggregate, noisy on a single chart.
+
+`evaluate_conditioning.py` answers a different question about a *checkpoint*: does the
+model use the audio at all? It scores each batch twice, once with its own audio and
+once with a neighbour's, and reports what the swap costs. Note accuracy cannot tell you
+this -- roughly 86% of slots are padding, and an all-pad baseline already scores 85.6%.
+
+```bash
+python evaluate_conditioning.py --checkpoint path/to/best-checkpoint.ckpt --trust
 ```
 
 ### Using the model directly
@@ -201,7 +228,8 @@ endings normalised to LF so the pins hold on Windows checkouts too. If you delib
 one of those files, re-pin it:
 
 ```bash
-python -c "import hashlib,pathlib;print(hashlib.sha1(pathlib.Path('generate.py').read_bytes().replace(b'
+python -c "import hashlib,pathlib;print(hashlib.sha1(pathlib.Path('generate.py').read_bytes().replace(b'
+
 ',b'
 ')).hexdigest())"
 ```
