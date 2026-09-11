@@ -120,7 +120,6 @@ def main():
     print(f"    coverage {coverage:.3f} against a chance floor of {floor:.3f}")
 
     bad, total = overlapping_sustains(args.chart)
-    held = sum(1 for item in timed if tokenizer.is_note_token(item[1]))
     print(f"\n  overlapping sustains {bad}/{total}"
           + ("  (vacuous: this chart has almost no sustains)"
              if profile.pct_sustain < 0.01 else ""))

@@ -103,7 +103,6 @@ def first_onset(y, sr, hop_length=256, floor=FIRST_ONSET_FLOOR):
     the attack that produced it, which is where a charter would put the note.
     """
     import librosa
-    import numpy as np
 
     env = librosa.onset.onset_strength(y=y, sr=sr, hop_length=hop_length)
     peaks = librosa.onset.onset_detect(
