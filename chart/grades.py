@@ -110,6 +110,24 @@ def relative_grade(name: str) -> float | None:
     return None if entry is None else entry[0] - NULL_GRADE
 
 
+HUMAN_MARKER_SHARE = 0.027
+HUMAN_MARKER_SHARE_SD = 0.038
+"""How much of a human Expert chart's pattern vocabulary is Expert markers.
+
+Measured over 80 Expert charts: mean 2.7%, median 1.4%. Real Expert charts are NOT
+built from the hardest patterns -- their mean pattern grade is 2.753, sitting on the
+null. They use the same universal vocabulary as every other level and arrange it
+differently, which is what the difficulty ladder says too: run length quadruples and
+the tap rate jumps while the shapes stay ordinary.
+
+A generated chart measured 14.9%, 5.5x the human rate and +3.23 sd out. The model
+reaches for split zigs constantly where a charter spends one as a moment of emphasis.
+That is a distinct defect from the vocabulary collapse and the weak conditioning: it
+survives at the pattern level, and it is what "mechanical" means when a chart plays at
+maximum intensity from start to finish.
+"""
+
+
 def markers(threshold: float = 0.3) -> list[str]:
     """Patterns that genuinely indicate a harder chart, hardest first."""
     scored = [(grade - NULL_GRADE, name) for name, (grade, _) in PATTERN_GRADES.items()]

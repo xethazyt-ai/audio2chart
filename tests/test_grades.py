@@ -43,3 +43,17 @@ class GradeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MarkerShareTests(unittest.TestCase):
+    """Expert charts are arrangements of ordinary vocabulary, not exotic patterns."""
+
+    def test_human_expert_charts_barely_use_marker_patterns(self):
+        from chart.grades import HUMAN_MARKER_SHARE
+        self.assertLess(HUMAN_MARKER_SHARE, 0.05)
+
+    def test_the_generated_overuse_is_several_sd_out(self):
+        """14.9% against a human 2.7% -- the number this baseline exists to catch."""
+        from chart.grades import HUMAN_MARKER_SHARE, HUMAN_MARKER_SHARE_SD
+        sigmas = (0.149 - HUMAN_MARKER_SHARE) / HUMAN_MARKER_SHARE_SD
+        self.assertGreater(sigmas, 3.0)
