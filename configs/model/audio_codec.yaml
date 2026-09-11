@@ -1,6 +1,13 @@
 name: discrete_encodec
 
 freeze_encoder: true
+# Fraction of training input tokens replaced at random, to blunt exposure bias.
+# Teacher forcing only ever shows a correct history, so the model drifts on its own
+# output: the generated tap rate climbs 0.224 -> 0.723 across one 30s chunk, and at a
+# lower sampling temperature collapses to a flat zero taps and zero sustains.
+# Declared here so it can be overridden normally -- reading it with a default is not
+# enough, Hydra refuses `model.input_noise=X` for a key the config does not define.
+input_noise: 0.0
 use_processor: true
 sample_rate: 24000
 

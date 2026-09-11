@@ -68,3 +68,27 @@ class ConfigSurfaceTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OverridableKnobTests(unittest.TestCase):
+    """A knob read with a default is not a knob you can set.
+
+    modules/trainer reads input_noise with OmegaConf.select(..., default=0.0), which
+    works for reading and does nothing for overriding: Hydra refuses
+    `model.input_noise=0.08` unless the config declares the key. The staged config
+    failed on exactly that, so the declaration is pinned here.
+    """
+
+    def test_input_noise_can_be_overridden(self):
+        from hydra import compose, initialize_config_dir
+
+        with initialize_config_dir(version_base=None, config_dir=str(CONFIG_DIR)):
+            cfg = compose(config_name="audio", overrides=["model.input_noise=0.08"])
+        self.assertAlmostEqual(cfg.model.input_noise, 0.08)
+
+    def test_input_noise_defaults_to_off(self):
+        from hydra import compose, initialize_config_dir
+
+        with initialize_config_dir(version_base=None, config_dir=str(CONFIG_DIR)):
+            cfg = compose(config_name="audio")
+        self.assertEqual(cfg.model.input_noise, 0.0)

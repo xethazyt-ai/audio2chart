@@ -81,10 +81,13 @@ One run tests it, and `evaluate_chart.py` reads the answer off in one command.
 
 ## Ready for the next run
 
-    loader.train_num_pieces: 1          (was 2)   ~10x faster, better gradient diversity
-    trainer.accumulate_grad_batches: 8  (was 4)   same effective batch
-    model.freeze_layers: 4              (was 8)   +45% trainable, in the audio blocks
-    model.input_noise: 0.05-0.1         (was 0)   against fault 1
+    python main.py --config-name audio       loader.train_num_pieces=1 trainer.accumulate_grad_batches=8       model.freeze_layers=4 model.input_noise=0.08
+
+Smoke-tested end to end: 0.449 s/batch, 3.6s per optimizer step against the current
+config's 30.4s, loss falling 3.82 -> 2.99, no OOM, and it writes nothing near the good
+checkpoint. `model.input_noise` did not work the first time -- Hydra refuses to
+override a key the config does not declare, and reading it with a default is not the
+same as declaring it. Now declared, with tests.
 
 An epoch drops from ~22 hours to under 3. `evaluate_conditioning.py` scores fault 2 on
 a checkpoint, `evaluate_chart.py` scores faults 1 and 3 on a chart.
