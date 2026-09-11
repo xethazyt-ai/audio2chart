@@ -154,34 +154,56 @@ class Charter(nn.Module):
                         dtype=torch.long, device=device)
         ids[:, 0] = self.config.bos_token_id
 
-        self_cache = [None for _ in range(self.transformer.n_layers)]
-        cross_cache = [None for _ in range(self.transformer.n_layers)]
         sample_fn = self._make_sampler(temperature, top_k, device, allowed_ids)
-
         neg_emb = self._contrast_audio(audio_emb) if guidance > 0 else None
-        neg_self = [None for _ in range(self.transformer.n_layers)] if neg_emb is not None else None
-        neg_cross = [None for _ in range(self.transformer.n_layers)] if neg_emb is not None else None
 
-        for step in tqdm(range(full_seq_len), desc="Let's rock!"):
-            cur_token = ids[:, step:step+1]                     # [B,1]
+        # Guidance runs a second branch with its own KV caches, so it doubles cache
+        # memory. Decoding every chunk at once then pushes a full song past the card
+        # and the driver pages it to host RAM instead of failing: measured 20 it/s
+        # without guidance against 12 s/it with it, a ~240x collapse on the same song.
+        # Halving how many chunks decode at once restores the original footprint.
+        group = B if neg_emb is None else max(1, (B + 1) // 2)
 
-            logits, self_cache, cross_cache = self.transformer(
-                cur_token, audio_emb, attention_mask=None, class_ids=class_ids,
-                step=step, use_cache=True, self_cache=self_cache, cross_cache=cross_cache
-            )                                                   # logits: [B,1,V]
+        layers = self.transformer.n_layers
+        total = full_seq_len * ((B + group - 1) // group)
+        progress = tqdm(total=total, desc="Let's rock!")
 
-            if neg_emb is not None:
-                # Same history, different music. What survives the subtraction is the
-                # part of the prediction this audio is responsible for; scaling it up
-                # is the whole point, because measurement says it is real but small.
-                neg_logits, neg_self, neg_cross = self.transformer(
-                    cur_token, neg_emb, attention_mask=None, class_ids=class_ids,
-                    step=step, use_cache=True, self_cache=neg_self, cross_cache=neg_cross
+        for lo in range(0, B, group):
+            hi = min(lo + group, B)
+            emb_g = audio_emb[lo:hi]
+            neg_g = None if neg_emb is None else neg_emb[lo:hi]
+            ids_g = None if class_ids is None else class_ids[lo:hi]
+
+            self_cache = [None for _ in range(layers)]
+            cross_cache = [None for _ in range(layers)]
+            neg_self = [None for _ in range(layers)] if neg_g is not None else None
+            neg_cross = [None for _ in range(layers)] if neg_g is not None else None
+
+            for step in range(full_seq_len):
+                cur_token = ids[lo:hi, step:step+1]
+
+                logits, self_cache, cross_cache = self.transformer(
+                    cur_token, emb_g, attention_mask=None, class_ids=ids_g,
+                    step=step, use_cache=True, self_cache=self_cache, cross_cache=cross_cache
                 )
-                logits = logits + guidance * (logits - neg_logits)
 
-            next_id = sample_fn(logits[:, -1])                  # [B,1]
-            ids[:, step + 1] = next_id.squeeze(-1)
+                if neg_g is not None:
+                    # Same history, different music. What survives the subtraction is
+                    # the part of the prediction this audio is responsible for; scaling
+                    # it up is the point, because measurement says it is real but small.
+                    neg_logits, neg_self, neg_cross = self.transformer(
+                        cur_token, neg_g, attention_mask=None, class_ids=ids_g,
+                        step=step, use_cache=True, self_cache=neg_self, cross_cache=neg_cross
+                    )
+                    logits = logits + guidance * (logits - neg_logits)
+
+                ids[lo:hi, step + 1] = sample_fn(logits[:, -1]).squeeze(-1)
+                progress.update(1)
+
+            del self_cache, cross_cache, neg_self, neg_cross
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        progress.close()
 
         # drop BOS + extract 'new' tokens for last chunk
         sequences = []
