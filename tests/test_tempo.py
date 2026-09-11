@@ -4,7 +4,7 @@ a beat line lands on the audio's first note, and the lead-in takes exactly as lo
 the audio takes to get there.
 """
 
-import pytest
+import unittest
 
 from chart.tempo import beat_aligned_tempo_events
 from chart.time_conversion import preprocess_bpm_segments, seconds_to_tick
@@ -17,116 +17,145 @@ def tick_of(seconds, bpm_events, resolution=RESOLUTION):
     return seconds_to_tick(seconds, segments, resolution, [s[2] for s in segments])
 
 
-@pytest.mark.parametrize("bpm,phase,onset", [
+BEAT_CASES = [
     (120.0, 0.10, 2.05),
     (174.0, 0.33, 1.02),
     (91.5, 0.48, 7.90),
     (200.0, 0.01, 0.55),
-])
-def test_first_note_lands_on_the_beat_line(bpm, phase, onset):
-    events, anchor_tick, anchor = beat_aligned_tempo_events(bpm, phase, onset, RESOLUTION)
-    assert anchor_tick % RESOLUTION == 0, "anchor must be a whole number of beats"
-    assert tick_of(anchor, events) == pytest.approx(anchor_tick, abs=1)
+]
 
 
-@pytest.mark.parametrize("bpm,phase,onset", [(120.0, 0.10, 2.05), (174.0, 0.33, 1.02)])
-def test_lead_in_lasts_exactly_as_long_as_the_intro(bpm, phase, onset):
-    """Robert's third step: the tick-0 event is whatever makes the lead-in end on time.
-
-    It cannot be exact -- .chart stores BPM as an integer number of milli-BPM, so the
-    lead-in is only ever as accurate as that quantisation allows. What matters is that
-    the residual is far below the 20 ms token grid, and it is: microseconds.
-    """
-    events, anchor_tick, anchor = beat_aligned_tempo_events(bpm, phase, onset, RESOLUTION)
-    lead_bpm = events[0][1] / 1000.0
-    beats = anchor_tick / RESOLUTION
-    assert abs(beats * 60.0 / lead_bpm - anchor) < 1e-3
+class TempoTest(unittest.TestCase):
+    def test_first_note_lands_on_the_beat_line(self):
+        for bpm, phase, onset in BEAT_CASES:
+            events, anchor_tick, anchor = beat_aligned_tempo_events(bpm, phase, onset, RESOLUTION)
+            assert anchor_tick % RESOLUTION == 0, "anchor must be a whole number of beats"
+            assert abs(tick_of(anchor, events) - anchor_tick) <= 1
 
 
-def test_the_grid_stays_locked_to_the_tracked_beat():
-    """The anchor is the nearest tracked beat, not the raw onset -- a note played a
-    little ahead of the beat must not drag the whole grid with it."""
-    bpm, phase, period = 120.0, 0.10, 0.5
-    _, _, anchor = beat_aligned_tempo_events(bpm, phase, 2.04, RESOLUTION)
-    assert (anchor - phase) % period == pytest.approx(0.0, abs=1e-9)
-    assert anchor == pytest.approx(2.10)
+    def test_lead_in_lasts_exactly_as_long_as_the_intro(self):
+        """Robert's third step: the tick-0 event is whatever makes the lead-in end on time.
+
+        It cannot be exact -- .chart stores BPM as an integer number of milli-BPM, so the
+        lead-in is only ever as accurate as that quantisation allows. What matters is that
+        the residual is far below the token grid, and it is: microseconds.
+        """
+        for bpm, phase, onset in BEAT_CASES[:2]:
+            events, anchor_tick, anchor = beat_aligned_tempo_events(
+                bpm, phase, onset, RESOLUTION)
+            lead_bpm = events[0][1] / 1000.0
+            beats = anchor_tick / RESOLUTION
+            assert abs(beats * 60.0 / lead_bpm - anchor) < 1e-3
 
 
-def test_song_tempo_holds_after_the_anchor():
-    events, anchor_tick, anchor = beat_aligned_tempo_events(174.0, 0.33, 1.02, RESOLUTION)
-    assert events[-1][1] == 174000
-    one_beat_later = tick_of(anchor + 60.0 / 174.0, events)
-    assert one_beat_later == pytest.approx(anchor_tick + RESOLUTION, abs=1)
+    def test_the_grid_stays_locked_to_the_tracked_beat(self):
+        """The anchor is the nearest tracked beat, not the raw onset -- a note played a
+        little ahead of the beat must not drag the whole grid with it."""
+        bpm, phase, period = 120.0, 0.10, 0.5
+        _, _, anchor = beat_aligned_tempo_events(bpm, phase, 2.04, RESOLUTION)
+        assert abs((anchor - phase) % period) < 1e-9
+        assert abs(anchor - 2.10) < 1e-9
 
 
-def test_there_is_always_room_for_a_lead_in():
-    """A song whose first note is at t=0 still needs a tick-0 event before it."""
-    _, anchor_tick, anchor = beat_aligned_tempo_events(120.0, 0.0, 0.0, RESOLUTION)
-    assert anchor_tick >= RESOLUTION
-    assert anchor > 0.0
+    def test_song_tempo_holds_after_the_anchor(self):
+        events, anchor_tick, anchor = beat_aligned_tempo_events(174.0, 0.33, 1.02, RESOLUTION)
+        assert events[-1][1] == 174000
+        one_beat_later = tick_of(anchor + 60.0 / 174.0, events)
+        assert abs(one_beat_later - (anchor_tick + RESOLUTION)) <= 1
 
 
-def test_snapping_lands_on_the_beat_grid_the_map_defines():
-    """--snap was inert until the grid meant something.
-
-    The model emits on a 20 ms grid, which does not divide evenly into beats: at
-    140 BPM a generated eighth-note run came out 246/247/224 ticks apart against a
-    true 240. Snapping only fixes that if it rounds against the *song's* grid, which
-    is what the beat-aligned map now provides.
-    """
-    from chart.time_conversion import convert_notes_to_ticks
-
-    bpm, resolution, snap = 140.0, 480, 16
-    events, anchor_tick, anchor = beat_aligned_tempo_events(bpm, 0.145, 0.546, resolution)
-
-    beat = 60.0 / bpm
-    times = [anchor + i * beat / 2 for i in range(8)]      # eighth notes
-    jittered = [t + (0.012 if i % 2 else -0.009) for i, t in enumerate(times)]
-
-    notes = convert_notes_to_ticks([1] * len(jittered), jittered, resolution=resolution,
-                                   bpm_events=events, snap=snap, pad_token_id=0)
-    ticks = sorted({item[0] for item in notes})
-    grid = resolution * 4 // snap
-    assert ticks, "snapping dropped every note"
-    assert all(tick % grid == 0 for tick in ticks), f"off-grid ticks: {ticks}"
-    assert ticks[0] == anchor_tick, "the first note must stay on its beat line"
+    def test_there_is_always_room_for_a_lead_in(self):
+        """A song whose first note is at t=0 still needs a tick-0 event before it."""
+        _, anchor_tick, anchor = beat_aligned_tempo_events(120.0, 0.0, 0.0, RESOLUTION)
+        assert anchor_tick >= RESOLUTION
+        assert anchor > 0.0
 
 
-def test_detected_tempo_is_rounded_to_a_tenth():
-    """140.006 BPM is estimation noise, not a real tempo.
+    def test_snapping_lands_on_the_beat_grid_the_map_defines(self):
+        """--snap was inert until the grid meant something.
 
-    Songs are recorded to a click and charters write round numbers, so the extra digits
-    the search produces are spurious. Rounding keeps the grid on values a human would
-    have typed, and the phase is re-fitted so the grid still lands on the beat.
-    """
-    import inspect
+        The model emits on a 20 ms grid, which does not divide evenly into beats: at
+        140 BPM a generated eighth-note run came out 246/247/224 ticks apart against a
+        true 240. Snapping only fixes that if it rounds against the *song's* grid, which
+        is what the beat-aligned map now provides.
+        """
+        from chart.time_conversion import convert_notes_to_ticks
 
-    from chart.tempo import detect_tempo
+        bpm, resolution, snap = 140.0, 480, 16
+        events, anchor_tick, anchor = beat_aligned_tempo_events(bpm, 0.145, 0.546, resolution)
 
-    source = inspect.getsource(detect_tempo)
-    assert "round(" in source
-    assert "best_phase(rounded" in source
+        beat = 60.0 / bpm
+        times = [anchor + i * beat / 2 for i in range(8)]      # eighth notes
+        jittered = [t + (0.012 if i % 2 else -0.009) for i, t in enumerate(times)]
 
-
-def test_snap_choice_preserves_every_note():
-    """Snapping to too coarse a subdivision merges notes; too fine invents precision."""
-    from chart.time_conversion import choose_snap
-
-    resolution = 192
-    sixteenths = [i * (resolution // 4) for i in range(16)]
-    assert choose_snap(sixteenths, resolution) == 16
-
-    # A 24th-note run must not be snapped onto a 16th grid.
-    twentyfourths = [i * (resolution // 6) for i in range(12)]
-    assert choose_snap(twentyfourths, resolution) in (12, 24)
-
-    # Quarter notes need nothing finer than quarters.
-    quarters = [i * resolution for i in range(8)]
-    assert choose_snap(quarters, resolution) == 4
+        notes = convert_notes_to_ticks([1] * len(jittered), jittered, resolution=resolution,
+                                       bpm_events=events, snap=snap, pad_token_id=0)
+        ticks = sorted({item[0] for item in notes})
+        grid = resolution * 4 // snap
+        assert ticks, "snapping dropped every note"
+        assert all(tick % grid == 0 for tick in ticks), f"off-grid ticks: {ticks}"
+        assert ticks[0] == anchor_tick, "the first note must stay on its beat line"
 
 
-def test_snap_choice_handles_degenerate_input():
-    from chart.time_conversion import choose_snap
+    def test_detected_tempo_is_rounded_to_a_tenth(self):
+        """140.006 BPM is estimation noise, not a real tempo.
 
-    assert choose_snap([], 192) == 0
-    assert choose_snap([100], 192) == 0
+        Songs are recorded to a click and charters write round numbers, so the extra digits
+        the search produces are spurious. Rounding keeps the grid on values a human would
+        have typed, and the phase is re-fitted so the grid still lands on the beat.
+
+        This drives detect_tempo on a synthetic click track rather than inspecting its
+        source: the previous version asserted that the word "round(" appeared in the
+        function body, which would have passed just as happily if the rounding had been
+        commented out or applied to the wrong variable.
+        """
+        import numpy as np
+
+        from chart.tempo import detect_tempo
+
+        sample_rate = 22050
+        true_bpm, phase, duration = 137.0, 0.21, 20.0
+        times = np.arange(0.0, duration, 1.0 / sample_rate)
+        audio = np.zeros_like(times)
+        click = np.exp(-np.arange(600) / 60.0) * np.sin(np.arange(600) * 0.35)
+        for beat in np.arange(phase, duration, 60.0 / true_bpm):
+            start_sample = int(beat * sample_rate)
+            audio[start_sample:start_sample + click.size] += click[:audio.size - start_sample]
+
+        bpm, fitted_phase, _ = detect_tempo(audio.astype(np.float32), sample_rate)
+
+        self_tenth = round(bpm, 1)
+        assert bpm == self_tenth, f"{bpm} is not on a tenth of a BPM"
+        # Octave errors are a separate failure mode; accept any metrical level, but the
+        # tempo has to be a clean multiple or fraction of the click we generated.
+        ratio = bpm / true_bpm
+        assert min(abs(ratio - r) for r in (0.5, 1.0, 2.0)) < 0.02, f"{bpm} is not 137-related"
+        assert 0.0 <= fitted_phase < 60.0 / bpm
+
+
+    def test_snap_choice_preserves_every_note(self):
+        """Snapping to too coarse a subdivision merges notes; too fine invents precision."""
+        from chart.time_conversion import choose_snap
+
+        resolution = 192
+        sixteenths = [i * (resolution // 4) for i in range(16)]
+        assert choose_snap(sixteenths, resolution) == 16
+
+        # A 24th-note run must not be snapped onto a 16th grid.
+        twentyfourths = [i * (resolution // 6) for i in range(12)]
+        assert choose_snap(twentyfourths, resolution) in (12, 24)
+
+        # Quarter notes need nothing finer than quarters.
+        quarters = [i * resolution for i in range(8)]
+        assert choose_snap(quarters, resolution) == 4
+
+
+    def test_snap_choice_handles_degenerate_input(self):
+        from chart.time_conversion import choose_snap
+
+        assert choose_snap([], 192) == 0
+        assert choose_snap([100], 192) == 0
+
+
+if __name__ == "__main__":
+    unittest.main()
