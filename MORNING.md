@@ -1,5 +1,76 @@
 # Status
 
+Branch `expressive-vocab-finetune`. Nothing pushed, `configs/audio.yaml` now edited
+(deliberately, see below). 286 tests passing.
+
+## Evening: the grid was throwing away the data we care about
+
+**The 20 ms grid could not represent tapping charts.** `discretize_time` bins notes at
+`grid_ms` and discards any window holding two in one bin. In tapping charts 22.8% of
+note gaps are shorter than 20 ms, 99% of charts contain at least one, and only 18.2% of
+30 s windows survived. Robert's own `yax03 - Down` reaches 7.3 ms.
+
+Fixed to **10 ms at a 15 s window**, which is the same 1502 tokens and costs nothing:
+
+    Hot N Cold     20ms/30s   1 of 7 windows clean,   484 notes kept, 6112 lost
+                   10ms/15s  14 of 14 clean,         6596 kept,          0 lost
+    corpus         20ms/30s  13,198 of 13,720 songs usable
+                   10ms/15s  13,701 of 13,720
+
+Also a sync fault on its own terms: +/-10 ms of quantisation where notes sat 18 ms
+apart. Now +/-5 ms. This was the direct answer to Robert's question about whether the
+model can line notes up.
+
+A bug came with it: `inference/engine.py` hardcoded `chunk_sec = 30` while the trainer
+read the window from config, so changing the grid would have had generation ask a
+1502-token model for 3002 -- nonsense output, no error. The engine reads config now and
+export refuses a config.json missing either timing field.
+
+## Selecting training data by measuring it
+
+Robert's idea: find charts where at least 80% of notes are taps, since that is what an
+overchart is. It beats both metadata sources, measured over 700 charts:
+
+    genre-tagged      median tap rate 0.964   100% are >= 80% taps
+    folder-labelled   median tap rate 0.643    31%
+    unlabelled        median tap rate 0.085     8%
+
+The genre tag is accurate and rare. The folder labels are two thirds dilution -- the
+2,908-chart manifest I was about to train on would have been mostly charts in another
+style. And 8% of unlabelled charts qualify, which is several hundred no label catches.
+
+## Catalogue, corrected from Robert's walkthrough
+
+123 -> 100 entries, and the audit went from 5 absent / 9 rare to 1 absent / 2 rare.
+
+- **Cakes were wrong.** Written as two trills (`G R G R O B O B`); they are a trill
+  against the anchor fret repeated, then a descent back to it. Robert gave me the
+  sequences yesterday and the file still had the wrong ones. Three of four started
+  matching immediately once corrected.
+- **Raked chimneys removed** -- Robert says they are the same thing as cakes.
+- **Castles cut to one.** Only the green anchor is attested.
+- **The twenty "anchor" entries moved to UNCONFIRMED_SHAPES.** Anchoring is holding the
+  lowest fret through a passage, a technique, not a three-note shape -- and asked what
+  those figures are called, Robert said he does not know what pattern that is.
+- **H pattern corrected** to `RB RYB RB`, and a variant added from H-ell.
+- **The skip added** -- the base pair is in 82% of tapping charts and was absent from a
+  124-entry catalogue entirely.
+
+## What the discovery tooling learned today
+
+Segmenting on **beats, not measures**. Robert's "a pattern is a bar or two" meant a
+beat or two; measures are four times too wide and returned several figures concatenated.
+Figures that appeared in 3-11 charts under measure windows appear in 100-160 of 262
+tapping charts under beat windows.
+
+Chord patterns are visible now. The H surfaced unprompted as `GO GYO GO` in 23 charts,
+and the chorded descent Robert named is in 70. Chording is not a general transformation
+-- 70 of 4,618 alternating shapes have a chorded counterpart -- but where it applies it
+dominates: an eight-note anchored descent appears in 7 charts alternating and 49
+chorded.
+
+---
+
 Branch `expressive-vocab-finetune`. 13 commits over the night and day, nothing pushed,
 no PRs opened, `configs/audio.yaml` untouched. 242 tests passing.
 
@@ -145,7 +216,9 @@ zig split G-B-O` grades -0.29 below it. Same family, opposite ends. G-Y-O splits
 
 ---
 
+
 # Detailed record
+
 
 Branch `expressive-vocab-finetune`. Nothing pushed, no PRs opened. Six local commits.
 
