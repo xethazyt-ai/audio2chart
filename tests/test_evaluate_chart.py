@@ -52,3 +52,27 @@ class OverlapTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PhrasingTests(unittest.TestCase):
+    """A human Expert chart breathes constantly; the current model does not."""
+
+    def test_counts_rests_per_minute(self):
+        times = [0.0, 0.1, 0.2, 5.0, 5.1, 10.0]      # two gaps over 0.25s in 10s
+        per_minute, typical = evaluate_chart.phrasing(times)
+        self.assertAlmostEqual(per_minute, 12.0, places=5)
+        self.assertAlmostEqual(typical, 4.85, places=2)
+
+    def test_continuous_play_has_no_rests(self):
+        times = [i * 0.1 for i in range(200)]
+        self.assertEqual((0.0, 0.0), evaluate_chart.phrasing(times))
+
+    def test_duplicate_timestamps_are_one_position(self):
+        """Chords share a timestamp and must not read as a zero-length gap."""
+        times = [0.0, 0.0, 0.0, 1.0, 1.0]
+        per_minute, typical = evaluate_chart.phrasing(times)
+        self.assertAlmostEqual(typical, 1.0, places=5)
+
+    def test_too_few_notes_is_zero_not_an_error(self):
+        self.assertEqual((0.0, 0.0), evaluate_chart.phrasing([]))
+        self.assertEqual((0.0, 0.0), evaluate_chart.phrasing([1.0]))

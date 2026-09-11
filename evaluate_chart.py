@@ -11,6 +11,10 @@ predicting all three at near-human rates when teacher-forced.
 coverage is not comparable between charts; the floor ranges 13% to 35% depending on
 how a chart uses the neck.
 
+*Does it phrase?* Rests per minute against the human Expert baseline. A human chart
+breathes constantly -- 34 short rests a minute, a third of the song -- where the
+current model plays continuously and then stops dead for seconds at a time.
+
 *Is it legal?* Universal rule 1, no overlapping sustains. Zero violations in 836,327
 human notes, so any violation is a defect -- though a chart with no sustains passes
 vacuously, which is worth knowing when reading the result.
@@ -48,6 +52,26 @@ def parse_args():
     parser.add_argument("--audio", type=Path, default=None,
                         help="Also score how well note density tracks the audio.")
     return parser.parse_args()
+
+
+REST_SECONDS = 0.25
+HUMAN_RESTS_PER_MINUTE = 34.0
+HUMAN_REST_SECONDS = 0.38
+"""Measured over 120 human Expert charts; only 1 of them has no rests at all."""
+
+
+def phrasing(times: list[float]) -> tuple[float, float]:
+    """(rests per minute, median rest) for gaps longer than REST_SECONDS."""
+    import statistics
+
+    ordered = sorted(set(times))
+    if len(ordered) < 2:
+        return 0.0, 0.0
+    span = ordered[-1] - ordered[0]
+    if span <= 0:
+        return 0.0, 0.0
+    gaps = [b - a for a, b in zip(ordered, ordered[1:]) if b - a > REST_SECONDS]
+    return len(gaps) / (span / 60.0), (statistics.median(gaps) if gaps else 0.0)
 
 
 def overlapping_sustains(chart_path: Path) -> tuple[int, int]:
@@ -118,6 +142,15 @@ def main():
     print(f"\n  pattern lift    {lift:>+10.3f}{HUMAN_LIFT_MEAN:>+10.3f}"
           f"{sigmas:>+9.1f}sd")
     print(f"    coverage {coverage:.3f} against a chance floor of {floor:.3f}")
+
+    per_minute, typical = phrasing([item[0] for item in timed])
+    print("")
+    print(f"  rests/min       {per_minute:>10.1f}{HUMAN_RESTS_PER_MINUTE:>10.1f}"
+          f"{per_minute - HUMAN_RESTS_PER_MINUTE:>+10.1f}"
+          + ("  " if abs(per_minute - HUMAN_RESTS_PER_MINUTE) < 10 else " !"))
+    print(f"  typical rest    {typical:>10.2f}{HUMAN_REST_SECONDS:>10.2f}"
+          f"{typical - HUMAN_REST_SECONDS:>+10.2f}"
+          + ("  " if abs(typical - HUMAN_REST_SECONDS) < 0.3 else " !"))
 
     bad, total = overlapping_sustains(args.chart)
     print(f"\n  overlapping sustains {bad}/{total}"
