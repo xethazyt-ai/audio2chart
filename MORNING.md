@@ -157,6 +157,43 @@ throughput problem, and switching it on would risk 6 GiB per worker across 4 wor
 which is the host-RAM blowup from earlier in this project. It should be deleted, not
 activated.
 
+## 11 Sep: the charts are missing most of the vocabulary, and it is not the model
+
+Separate fault from the audio-conditioning one, and probably the bigger part of why
+the Paparazzi chart looked the way it did.
+
+Profiled against the corpus, the generated chart had **zero chords, zero tap notes and
+0.1% sustains** where human charts have 12.7%, 47% and 22.9%, plus 6x too many opens,
+2x too many greens, a mean run of 235 notes and 99.7% of its note spacings in two
+adjacent buckets. That is "mechanical" made measurable.
+
+The model is not the problem. Teacher-forced it is well calibrated:
+
+    chord    true 0.205   model mass 0.171
+    tap      true 0.197   model mass 0.181
+    sustain  true 0.071   model mass 0.091
+
+And the output path is lossless -- a human chart round-tripped through
+convert_notes_to_ticks -> decode -> fill_expert_single comes back bit-identical
+(tap 0.993 -> 0.993).
+
+**It is exposure bias in the decoding loop.** Across one 30s chunk at temperature 1.0
+the tap rate climbs 0.224 -> 0.454 -> 0.671 -> 0.723 as the model conditions on more of
+its own output. At temperature 0.5 it is a flat 0.000 with no sustains at all:
+sharpening suppresses the runaway and the vocabulary together. A pad-logit bias, which
+should have separated density from vocabulary, collapses output 22-fold over one unit
+and suppresses chords and taps preferentially -- the signature of a self-reinforcing
+loop, where what the model emits becomes the history it reads.
+
+So no sampler setting fixes this, and the three I tried are three knobs on one loop.
+The fix is in training -- scheduled sampling, or simply more of it now that a run is
+~10x faster. `--pad-bias` is kept as a no-op-by-default diagnostic with the numbers in
+its docstring.
+
+Also settled: universal rule 1 (no note overlapping) is real -- zero violations in
+836,327 human notes across 300 charts. Our output satisfies it, but vacuously, because
+it emits almost no sustains.
+
 ## Decisions waiting for you
 
 - **The next training run's config.** Measured end to end in the real pipeline:
