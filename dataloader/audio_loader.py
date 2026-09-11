@@ -156,7 +156,8 @@ class ChunkedWaveformDataset(Dataset):
 
         # Worker-local state
         self._worker_id = None
-        self._audio_cache = {}
+        # Ordered so the oldest entry can be evicted; see _load_audio_file.
+        self._audio_cache = OrderedDict()
         self._current_chunk_id = None
 
         logger.info("Dataset initialized with %d items and chunk size %d", len(self.items), chunk_size)
@@ -262,26 +263,40 @@ class ChunkedWaveformDataset(Dataset):
             return True
         return False
 
+    AUDIO_CACHE_ENTRIES = 32
+    """Decoded songs held per worker. At ~10.8 MB each that is ~350 MB per worker,
+    which four workers can afford; the `max_cache_gb` budget could not be trusted for
+    this because it is per worker and sized in gigabytes."""
+
     def _load_audio_file(self, audio_path: str) -> Tuple[torch.Tensor, int]:
-        # NOTE: _audio_cache is read here and cleared in _should_clear_cache, but
-        # nothing ever writes to it, so it is always empty and every call re-reads the
-        # file. That also means `max_cache_gb` and _estimate_chunk_size size a cache
-        # that does not exist -- tuning that knob has no effect on anything.
-        #
-        # Left inert deliberately. Lightning's profiler puts the whole dataloader at
-        # 0.034% of a training step (0.0037s against 7.5s), so there is nothing to win
-        # by populating it, and populating it would allocate up to max_cache_gb per
-        # worker across four workers -- the host-RAM exhaustion that the chart cache
-        # already caused once on this machine.
-        if audio_path in self._audio_cache:
-            return self._audio_cache[audio_path]
-        
+        """Decoded audio for one song, reusing a recent read where possible.
+
+        This cache was read but never written, so every sample re-read the whole file.
+        That was survivable at 30 s windows with two pieces per item -- one ~10.8 MB
+        read served 60 s of training audio, and Lightning's profiler put the whole
+        dataloader at 0.034% of a step. At 15 s windows with one piece it serves 15 s,
+        four times the I/O per sample, and the GPU starves: utilisation measured
+        swinging 87% -> 2% with the loader unable to keep up.
+
+        Bounded by count rather than by the `max_cache_gb` budget, because that budget
+        is what made populating this risky: 6 GB per worker across four workers is the
+        host-RAM exhaustion the chart cache already caused once. A fixed number of
+        entries is predictable -- 32 songs at ~10.8 MB is ~350 MB per worker.
+        """
+        cached = self._audio_cache.get(audio_path)
+        if cached is not None:
+            self._audio_cache.move_to_end(audio_path)
+            return cached
+
         try:
             if self.use_predecoded_raw:
                 # Must have 'length_samples' in item metadata
                 waveform, sr = load_raw_audio(audio_path, self.sample_rate)  # load longer buffer
             else:
                 waveform, sr = load_opus_ffmpeg(audio_path, self.sample_rate, timeout_seconds=20)
+            self._audio_cache[audio_path] = (waveform, sr)
+            while len(self._audio_cache) > self.AUDIO_CACHE_ENTRIES:
+                self._audio_cache.popitem(last=False)
             return waveform, sr
 
         except (OSError, RuntimeError, subprocess.SubprocessError) as error:

@@ -63,7 +63,7 @@ loader:
   train_num_pieces: 2
   val_batch_size: 1
   val_num_pieces: 1
-  num_workers: 4
+  num_workers: 6
   # Audio cache budget per dataloader, divided among its workers. The 20 GB default
   # becomes 40 GB during validation, because persistent_workers keeps the training
   # workers alive while the validation loader spawns its own -- which killed a run at
