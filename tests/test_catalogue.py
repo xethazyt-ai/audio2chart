@@ -19,13 +19,29 @@ class CatalogueTest(unittest.TestCase):
         # Contiguous and gapped trips are different shapes, not transpositions.
         self.assertNotEqual(signature(parse("G R Y")), signature(parse("G Y B")))
 
-    def test_every_entry_parses_to_at_least_two_notes(self):
+    def test_every_entry_parses_to_at_least_two_positions(self):
+        """`parse` only sees single notes, so chorded entries need `positions`."""
+        from chart.catalogue import positions
+
         for name, text in CATALOGUE.items():
-            self.assertGreaterEqual(len(parse(text)), 2, name)
+            self.assertGreaterEqual(len(positions(text)), 2, name)
 
     def test_every_entry_has_a_signature(self):
-        for name, sig in signatures().items():
-            self.assertTrue(sig, name)
+        """Single-note entries keep delta signatures; chorded ones cannot have them."""
+        from chart.catalogue import entry_signature, is_chorded_entry
+
+        for name, text in CATALOGUE.items():
+            self.assertTrue(entry_signature(text), name)
+
+    def test_a_chorded_entry_is_invisible_to_the_single_note_parser(self):
+        """Why the H pattern was reported absent from 1,200 charts: written as single
+        notes it matched nothing, and parsed as single notes it is empty."""
+        from chart.catalogue import is_chorded_entry, positions
+
+        text = CATALOGUE["H pattern standard"]
+        self.assertTrue(is_chorded_entry(text))
+        self.assertEqual((), parse(text))
+        self.assertEqual(3, len(positions(text)))
 
     def test_known_duplicate_is_detected(self):
         # triangle slide 8-note and sweep 8-note are the same literal sequence.
