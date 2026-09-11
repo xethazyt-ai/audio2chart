@@ -22,11 +22,18 @@ on 20 of 20 batches, while the note-history prior carries the rest. *Fix staged:
 `freeze_layers: 4` gives 45% more trainable parameters in the blocks that read audio.
 Classifier-free guidance is being measured now.*
 
-**3. It has no dynamics.** It plays Expert-marker patterns in 14.9% of pattern
-instances against a human 2.7% -- 5.5x, +3.23 sd -- with mean runs of 235 notes and
-flat density. Real Expert charts are ordinary vocabulary arranged to become hard in
-places; this plays at maximum intensity throughout. *No fix staged; this is the one
-that most resembles what Robert actually described.*
+**3. It never rests, and it overspends the hard patterns.** No gap between notes
+exceeds 250 ms anywhere in the chart -- not rare, none -- where 118 of 120 human Expert
+charts have broader rhythm. And Expert-marker patterns make up 14.9% of its pattern
+instances against a human 2.7% (+3.23 sd), where a charter spends one for emphasis.
+Real Expert charts are ordinary vocabulary that becomes hard in places. *No fix
+staged.*
+
+Two things I claimed here first and had to retract, both from judging a number without
+a baseline: the chart's density is *more* variable than 93% of human charts (0.606
+against a human mean 0.409), not flat; and its 235-note mean run is normal for Expert,
+whose own mean is 232 -- I cited it as a defect against a measurement I had taken that
+morning. The long runs are a consequence of never resting, not a separate problem.
 
 ## The good news
 

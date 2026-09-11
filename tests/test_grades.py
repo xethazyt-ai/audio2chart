@@ -57,3 +57,16 @@ class MarkerShareTests(unittest.TestCase):
         from chart.grades import HUMAN_MARKER_SHARE, HUMAN_MARKER_SHARE_SD
         sigmas = (0.149 - HUMAN_MARKER_SHARE) / HUMAN_MARKER_SHARE_SD
         self.assertGreater(sigmas, 3.0)
+
+
+class RetractedClaimsTests(unittest.TestCase):
+    """Two supports for the 'no dynamics' reading did not survive their baselines.
+
+    Pinned because both looked obviously damning in isolation, and the second was
+    contradicted by a measurement already in this repo.
+    """
+
+    def test_expert_runs_really_are_that_long(self):
+        """235 notes was cited as abnormal; Expert's own mean is 232."""
+        from chart.metrics import DIFFICULTY_LADDER
+        self.assertGreater(DIFFICULTY_LADDER["Expert"]["mean_run"], 200)

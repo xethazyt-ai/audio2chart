@@ -122,9 +122,16 @@ the tap rate jumps while the shapes stay ordinary.
 
 A generated chart measured 14.9%, 5.5x the human rate and +3.23 sd out. The model
 reaches for split zigs constantly where a charter spends one as a moment of emphasis.
-That is a distinct defect from the vocabulary collapse and the weak conditioning: it
-survives at the pattern level, and it is what "mechanical" means when a chart plays at
-maximum intensity from start to finish.
+That is a distinct defect from the vocabulary collapse and the weak conditioning,
+because it survives at the pattern level where those two do not.
+
+Two claims that looked like the same defect did NOT survive their baselines, and are
+recorded so they are not repeated: the generated chart's density is *more* variable
+than 93% of human charts (nps variation 0.606 against a human mean 0.409), and its
+235-note mean run is normal for Expert, whose own mean is 232. What does survive
+alongside the marker overuse is that the chart never rests -- no gap between notes
+exceeds 250 ms anywhere in it, where 118 of 120 human Expert charts have broader
+rhythm. The long runs follow from that rather than from long phrases.
 """
 
 
