@@ -86,6 +86,35 @@ anything, so I stopped it and replaced it with a 36-song paired version.
 2. 36-song paired guidance sweep, resumable, appending to
    `G:\a2c_data\guidance_sweep.jsonl`, log at `G:\a2c_data\guidance_sweep.log`.
 
+## Retracted: precomputing Encodec codes is not the fix
+
+I had this queued as the big throughput win, carried from an old estimate that the
+step was ~9.8s against ~0.2s of model math. Profiled properly at freeze_layers 0:
+
+    dataloader fetch (decode + window)   0.292s    2.0%
+    encodec encode                       0.246s    1.6%
+    transformer fwd+bwd+step            14.436s   96.4%
+    total                               14.973s
+
+Precomputing the codes would save 1.6%. Data loading is already fine -- the lazy LRU
+cache and four workers did their job. The whole cost is the transformer's own
+forward+backward, which is absurd for a 230M model at batch 1.
+
+The config sets no precision at all, so Lightning runs 32-true and TF32 is never
+enabled. Benchmarking fp32 / TF32 / bf16 now; that is where the time is.
+
+## Confirmed since the first draft
+
+- `freeze_layers: 0` runs in the *real* pipeline, not just synthetically: 48 batches,
+  no OOM, 7938 MiB steady, loss stepping normally. The good b6000 checkpoint is
+  untouched.
+- `--snap` now works. It rounds against the song's beat grid, and until the tempo fix
+  there was no grid to round against. At 140 BPM a generated eighth-note run came out
+  246/247/224 ticks against a true 240; snapping fixes that without moving the first
+  note off its beat line.
+- Second effect of the `freeze_encoder` bug: `audio_encoder.eval()` was never called,
+  so Encodec ran in *train* mode for the whole 24-hour run. It is deterministic now.
+
 ## Decisions waiting for you
 
 - **The next training run's config.** With the encoder fixed we can likely drop
