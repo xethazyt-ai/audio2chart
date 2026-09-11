@@ -28,7 +28,8 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
 from chart.bars import bar_boundaries, group_by_bar
-from chart.catalogue import CATALOGUE, body_signature
+from chart.catalogue import (CATALOGUE, body_signature, chord_signature,
+                             is_chorded, parse)
 from chart.chart_processor import ChartProcessor
 from chart.discover import render
 from chart.tokenizer import SimpleTokenizerGuitar
@@ -50,6 +51,22 @@ def parse_args():
                         help="Bars per candidate rep")
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--top", type=int, default=25)
+    parser.add_argument("--chords", action="store_true",
+                        help="Include figures containing chords. Off by default because "
+                             "the catalogue is written in single notes, so chorded "
+                             "figures are all reported as new.")
+    parser.add_argument("--only-chords", action="store_true",
+                        help="Only figures that contain a chord.")
+    parser.add_argument("--positions", type=int, default=0,
+                        help="Instead of matching whole bars, slide a window of this "
+                             "many positions within each bar. Whole-bar matching only "
+                             "finds figures that fill a bar, so a short figure sitting "
+                             "inside a busier bar -- the H pattern is three hits -- is "
+                             "invisible to it.")
+    parser.add_argument("--min-notes", type=int, default=MIN_NOTES,
+                        help="Positions per figure. The default of 4 excludes the H "
+                             "pattern, which is three hits (RB -> RYB -> RB), so chord "
+                             "searches want 3.")
     return parser.parse_args()
 
 
@@ -101,8 +118,14 @@ def is_static(signature: tuple[int, ...]) -> bool:
     return sum(1 for delta in signature if delta == 0) * 2 >= len(signature)
 
 
-def bar_signatures(chart_path: str, tokenizer, span: int):
-    """Delta signatures of each `span`-bar window that holds a single-note figure."""
+def bar_signatures(chart_path: str, tokenizer, span: int, chords: bool = False,
+                   min_notes: int = MIN_NOTES, width: int = 0):
+    """Signatures of each `span`-bar window holding a figure.
+
+    Without `chords` a chord ends the figure, which is how the catalogue is written.
+    With it, positions are described by shape and root movement instead, so tap-chord
+    figures like the H pattern become visible.
+    """
     processor = ChartProcessor(["Expert"], ["Single"])
     processor.read_chart(chart_path, target_sections="ExpertSingle")
     notes = processor.notes.get("ExpertSingle")
@@ -118,19 +141,32 @@ def bar_signatures(chart_path: str, tokenizer, span: int):
     out = []
     for index in range(len(bars) - span + 1):
         window = [event for bar in bars[index:index + span] for event in bar]
-        if not (MIN_NOTES <= len(window) <= MAX_NOTES):
+        if not (min_notes <= len(window) <= MAX_NOTES):
             continue
-        frets = []
+        positions = []
+        broken = False
         for event in window:
             lanes = tokenizer.reverse_chord.get(
                 event[1] // (tokenizer.N_FLAG * tokenizer.N_SUSTAIN), ())
-            if len(lanes) != 1 or lanes[0] > 4:
-                frets = []              # a chord or open note ends the figure
+            if not lanes or any(lane > 4 for lane in lanes):
+                broken = True           # an open note ends the figure either way
                 break
-            frets.append(lanes[0])
-        if len(frets) < MIN_NOTES:
+            if len(lanes) > 1 and not chords:
+                broken = True
+                break
+            positions.append(tuple(lanes))
+        if broken or len(positions) < min_notes:
             continue
-        out.append(tuple(b - a for a, b in zip(frets, frets[1:])))
+        groups = ([positions[i:i + width] for i in range(len(positions) - width + 1)]
+                  if width else [positions])
+        for group in groups:
+            if len(group) < min_notes:
+                continue
+            if chords:
+                out.append(chord_signature(group))
+            else:
+                frets = [p[0] for p in group]
+                out.append(tuple(b - a for a, b in zip(frets, frets[1:])))
     return out
 
 
@@ -149,7 +185,10 @@ def main():
     scanned = 0
     for path in charts:
         try:
-            signatures = bar_signatures(path, tokenizer, args.bars)
+            signatures = bar_signatures(path, tokenizer, args.bars,
+                                        chords=args.chords or args.only_chords,
+                                        min_notes=args.min_notes,
+                                        width=args.positions)
         except Exception:
             continue
         scanned += 1
@@ -161,12 +200,23 @@ def main():
     print(f"scanned {scanned}; {len(counts)} distinct {args.bars}-bar shapes\n")
     print(f"{'count':>7}{'charts':>8}  {'known':<7}{'notes':<26}signature")
     shown = 0
+    chorded = args.chords or args.only_chords
     for signature, count in counts.most_common():
-        if charts_with[signature] < 3 or is_static(signature):
+        if charts_with[signature] < 3:
             continue
-        mark = "yes" if is_known(signature, known) else "NEW"
-        print(f"{count:>7}{charts_with[signature]:>8}  {mark:<7}"
-              f"{render(signature)[:24]:<26}{signature}")
+        if args.only_chords and not is_chorded(signature):
+            continue
+        if not chorded and is_static(signature):
+            continue
+        if chorded:
+            shown_text = " ".join(
+                "".join("GRYBO"[f] for f in shape) + (f"({move:+d})" if move else "")
+                for shape, move in signature)
+            print(f"{count:>7}{charts_with[signature]:>8}  {'':<7}{shown_text[:70]}")
+        else:
+            mark = "yes" if is_known(signature, known) else "NEW"
+            print(f"{count:>7}{charts_with[signature]:>8}  {mark:<7}"
+                  f"{render(signature)[:24]:<26}{signature}")
         shown += 1
         if shown >= args.top:
             break

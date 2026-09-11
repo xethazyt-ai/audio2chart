@@ -209,3 +209,42 @@ def collisions() -> dict[tuple[int, ...], list[str]]:
     for name, sig in signatures().items():
         grouped.setdefault(sig, []).append(name)
     return {sig: names for sig, names in grouped.items() if len(names) > 1}
+
+
+def chord_signature(positions: list[tuple[int, ...]]) -> tuple:
+    """Transposition-invariant identity for a figure that may contain chords.
+
+    `signature` only describes single notes, so any figure with a chord in it was
+    invisible to pattern search -- which is how the H pattern came to be reported as
+    never occurring when it is in 8.9% of charts. Robert: some patterns use tap chords.
+
+    Each position splits into two parts:
+
+    *shape* -- the frets relative to the lowest one in that position, so a single note
+    is (0,) and RB and YO are both (0, 2). This is what the hand does.
+
+    *root move* -- how far the lowest fret moved from the previous position. This is
+    where the hand goes.
+
+    So the H pattern RB -> RYB -> RB reads as shapes (0,2), (0,1,2), (0,2) with root
+    moves 0, 0, and matches GO -> GYO -> GO at a different place on the neck, which is
+    the same pattern and should compare equal.
+    """
+    if not positions:
+        return ()
+    out = []
+    previous_root = None
+    for frets in positions:
+        if not frets:
+            continue
+        root = min(frets)
+        shape = tuple(sorted(fret - root for fret in frets))
+        move = 0 if previous_root is None else root - previous_root
+        out.append((shape, move))
+        previous_root = root
+    return tuple(out)
+
+
+def is_chorded(signature: tuple) -> bool:
+    """Does this figure contain a chord at all?"""
+    return any(len(shape) > 1 for shape, _ in signature)
