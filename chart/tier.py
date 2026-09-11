@@ -79,11 +79,62 @@ def hand_movement(runs: list[list[int]]) -> tuple[float, float]:
     return statistics.mean(jumps), wide
 
 
+HAND_SPAN = 3
+"""Frets reachable without moving the hand: index anchored, three fingers above.
+
+So G R Y B is one hand position (span 3) and adding O forces a shift.
+"""
+
+ANCHOR_WINDOW = 16
+"""Notes. How far apart the lowest fret may recur and still be worth holding."""
+
+
+def anchorable(frets: list[int], window: int = ANCHOR_WINDOW,
+               span: int = HAND_SPAN) -> bool:
+    """Can the index finger hold the lowest fret through this passage?
+
+    Robert: anchoring means holding the lowest note down and not letting it up until
+    it is safe to. It is a technique applied across a passage, not a shape -- which is
+    why the catalogue's twenty "anchor X-Y-X" entries are misnamed, since they describe
+    three-note figures rather than anything about holding a fret.
+
+    Unlike the slide-versus-anchor distinction, which is invisible in chart data
+    because both produce identical notes, this is measurable: the lowest fret has to
+    recur often enough to be worth keeping down, and the passage has to fit under one
+    hand.
+    """
+    if len(frets) < 2:
+        return False
+    if max(frets) - min(frets) > span:
+        return False
+    lowest = min(frets)
+    positions = [i for i, fret in enumerate(frets) if fret == lowest]
+    if len(positions) < 2:
+        return False
+    gaps = [b - a for a, b in zip(positions, positions[1:])]
+    return max(gaps) <= window
+
+
+def anchor_share(runs: list[list[int]], window: int = ANCHOR_WINDOW) -> float:
+    """Share of notes sitting inside an anchorable passage.
+
+    A better difficulty signal than raw fret movement, which counts distance without
+    knowing whether the hand actually had to leave its position.
+    """
+    total = held = 0
+    for run in runs:
+        total += len(run)
+        if anchorable(run, window):
+            held += len(run)
+    return held / total if total else 0.0
+
+
 def features(profile, times: list[float], runs: list[list[int]],
              marker_share: float = 0.0) -> dict[str, float]:
     """Everything the tier model reads, from one chart."""
     mean_jump, wide_jumps = hand_movement(runs)
     return {
+        "anchor_share": anchor_share(runs),
         "nps": profile.nps,
         "peak10": peak_density(times),
         "longest_fast": longest_fast_stretch(times),
@@ -99,4 +150,4 @@ def features(profile, times: list[float], runs: list[list[int]],
 
 FEATURE_NAMES = ("nps", "peak10", "longest_fast", "pct_chord", "pct_tap",
                  "pct_sustain", "mean_jump", "wide_jumps", "marker_share",
-                 "nps_variation")
+                 "nps_variation", "anchor_share")

@@ -55,3 +55,37 @@ class HandMovementTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AnchorTests(unittest.TestCase):
+    """Anchoring is a technique across a passage, not a shape.
+
+    Robert: hold the lowest note down and do not let it up until it is safe. Unlike
+    slide-versus-anchor, which is invisible because both produce identical notes, this
+    is measurable from the chart.
+    """
+
+    def test_a_quad_zig_anchors_on_its_lowest_fret(self):
+        """Robert's example: R Y B Y R G repeated, index parked on green."""
+        from chart.tier import anchorable
+        self.assertTrue(anchorable([1, 2, 3, 2, 1, 0] * 4))
+
+    def test_a_passage_wider_than_the_hand_cannot_anchor(self):
+        """G R Y B is one position; adding O forces a shift."""
+        from chart.tier import anchorable
+        self.assertTrue(anchorable([0, 1, 2, 3, 0, 1, 2, 3]))
+        self.assertFalse(anchorable([0, 1, 2, 3, 4, 0, 1, 2, 3, 4]))
+
+    def test_the_lowest_fret_must_actually_recur(self):
+        from chart.tier import anchorable
+        self.assertFalse(anchorable([0, 1, 2, 3, 2, 1, 2, 3, 2, 1]))
+
+    def test_a_long_gap_means_letting_go(self):
+        from chart.tier import anchorable
+        self.assertFalse(anchorable([0] + [1, 2, 3] * 9 + [0], window=4))
+
+    def test_share_counts_notes_not_runs(self):
+        from chart.tier import anchor_share
+        held = [1, 2, 3, 2, 1, 0] * 2          # 12 notes, anchorable
+        loose = [0, 4, 0, 4]                    # 4 notes, too wide
+        self.assertAlmostEqual(anchor_share([held, loose]), 12 / 16)
