@@ -131,6 +131,9 @@ CATALOGUE: dict[str, str] = {
     "cake 8-note": "B G B G R Y R G",
     "cake 10-note": "B G B G B G R Y R G",
     "cake 12-note": "O G O G O G R Y B Y R G",
+    # Confirmed by eye in FIRME NA FE at ticks 768-1145, which is exactly this. A
+    # corpus audit reports it absent because it is the longest variant and genuinely
+    # rare, not because the entry is wrong.
     "cake 14-note": "O G O G O G R Y B O B Y R G",
     # --- slides and H ----------------------------------------------------------
     "triangle slide 6-note": "G R Y B Y R",
@@ -140,6 +143,10 @@ CATALOGUE: dict[str, str] = {
     # the rung appearing only in the middle. Found in 8.9% of charts once searched for
     # correctly, and independently by the chord search as GO GYO GO in 23 tapping charts.
     "H pattern standard": "RB RYB RB",
+    # H-ell, ticks 29568-29928. An H whose rung moves: rails held while the rung walks
+    # G then B then drops out, ending on a lone anchor note. The standard H sits intact
+    # inside the second half of it.
+    "H pattern moving rung": "GYO YBO YO G",
     # --- skips -----------------------------------------------------------------
     # Robert: skip tapping grazes the tapping finger across two frets -- O and B, then
     # B and Y -- so a small trill costs one movement instead of two. That efficiency is
@@ -172,27 +179,6 @@ CATALOGUE: dict[str, str] = {
     "trip desc gapped B-Y-G": "B Y G",
     "trip desc gapped O-Y-G": "O Y G",
     "trip desc gapped O-R-G": "O R G",
-    # --- single-fret anchors ---------------------------------------------------
-    "anchor G-R-G": "G R G",
-    "anchor G-Y-G": "G Y G",
-    "anchor G-B-G": "G B G",
-    "anchor G-O-G": "G O G",
-    "anchor R-G-R": "R G R",
-    "anchor R-Y-R": "R Y R",
-    "anchor R-B-R": "R B R",
-    "anchor R-O-R": "R O R",
-    "anchor Y-G-Y": "Y G Y",
-    "anchor Y-R-Y": "Y R Y",
-    "anchor Y-B-Y": "Y B Y",
-    "anchor Y-O-Y": "Y O Y",
-    "anchor B-G-B": "B G B",
-    "anchor B-R-B": "B R B",
-    "anchor B-Y-B": "B Y B",
-    "anchor B-O-B": "B O B",
-    "anchor O-B-O": "O B O",
-    "anchor O-Y-O": "O Y O",
-    "anchor O-R-O": "O R O",
-    "anchor O-G-O": "O G O",
     # --- rake trills -----------------------------------------------------------
     "raked trill 2-finger": "O G O G O G",
     "raked trill 3-finger": "O G O G O G O G",
@@ -238,11 +224,11 @@ CATALOGUE: dict[str, str] = {
     "trill 2-split O-R": "O R O R",
     "trill full span O-G": "O G O G",
     # --- castles ---------------------------------------------------------------
+    # Robert says four other variants exist, but only this one is attested here: over
+    # 250 charts the green anchor is common while red and yellow appear in 1 chart each,
+    # orange in 3 and blue in none. The others are removed rather than kept as
+    # unverified, since a list of named patterns should not carry entries nobody charts.
     "castle green anchor (TTFAF)": "R G Y G B G O G B G Y G R G",
-    "castle red anchor": "Y R B R O R B R Y R G R",
-    "castle yellow anchor": "B Y O Y B Y R Y G Y R Y",
-    "castle orange anchor (reverse)": "B O Y O R O G O R O Y O B O",
-    "castle blue anchor (reverse)": "O B Y B R B G B R B Y B O B",
 }
 
 
@@ -300,3 +286,36 @@ def chord_signature(positions: list[tuple[int, ...]]) -> tuple:
 def is_chorded(signature: tuple) -> bool:
     """Does this figure contain a chord at all?"""
     return any(len(shape) > 1 for shape, _ in signature)
+
+
+# Shapes that occur in the corpus but that Robert does not recognise as named patterns.
+# They were filed as "anchor X-Y-X", which is wrong twice over: anchoring is holding the
+# lowest fret through a passage -- a technique, not a three-note shape -- and asked what
+# these figures are called, Robert's answer was that he does not know what pattern that
+# is. That is the same verdict he gave repeated same-fret notes, which are also common
+# and also not patterns.
+#
+# Kept because they do occur and the matcher may still want them, separated because a
+# catalogue of named patterns should not imply these have names.
+UNCONFIRMED_SHAPES: dict[str, str] = {
+    "shape G-R-G": "G R G",
+    "shape G-Y-G": "G Y G",
+    "shape G-B-G": "G B G",
+    "shape G-O-G": "G O G",
+    "shape R-G-R": "R G R",
+    "shape R-Y-R": "R Y R",
+    "shape R-B-R": "R B R",
+    "shape R-O-R": "R O R",
+    "shape Y-G-Y": "Y G Y",
+    "shape Y-R-Y": "Y R Y",
+    "shape Y-B-Y": "Y B Y",
+    "shape Y-O-Y": "Y O Y",
+    "shape B-G-B": "B G B",
+    "shape B-R-B": "B R B",
+    "shape B-Y-B": "B Y B",
+    "shape B-O-B": "B O B",
+    "shape O-B-O": "O B O",
+    "shape O-Y-O": "O Y O",
+    "shape O-R-O": "O R O",
+    "shape O-G-O": "O G O",
+}

@@ -64,9 +64,9 @@ PATTERN_GRADES: dict[str, tuple[float, int]] = {
     'quad asc gapped G-R-B-O': (2.81, 477),
     'triangle slide 6-note': (2.80, 3004),
     'trip zig split G-R-B': (2.80, 311),
-    'anchor O-G-O': (2.79, 724),
+    'shape O-G-O': (2.79, 724),
     'trip desc gapped O-Y-G': (2.78, 1658),
-    'anchor G-O-G': (2.77, 3092),
+    'shape G-O-G': (2.77, 3092),
     'trip asc gapped G-B-O': (2.77, 1186),
     'quad desc contiguous O-B-Y-R': (2.76, 11091),
     'ladder triplet step asc': (2.76, 540),
@@ -75,7 +75,7 @@ PATTERN_GRADES: dict[str, tuple[float, int]] = {
     'quint zig G-R-Y-B-O': (2.73, 323),
     'trip chimney G-Y-B, O peak': (2.72, 64),
     'quint asc sweep': (2.72, 1215),
-    'anchor G-R-G': (2.72, 11285),
+    'shape G-R-G': (2.72, 11285),
     'trip zig split G-Y-B': (2.71, 286),
     'quad asc contiguous G-R-Y-B': (2.71, 5428),
     'reverse chimney trip a': (2.71, 893),
@@ -87,25 +87,30 @@ PATTERN_GRADES: dict[str, tuple[float, int]] = {
     'trip asc contiguous G-R-Y': (2.70, 22980),
     'quint chimney full neck': (2.69, 245),
     'quint desc sweep': (2.68, 2554),
-    'anchor R-G-R': (2.66, 4888),
-    'anchor G-Y-G': (2.66, 10682),
-    'anchor G-B-G': (2.66, 7114),
+    'shape R-G-R': (2.66, 4888),
+    'shape G-Y-G': (2.66, 10682),
+    'shape G-B-G': (2.66, 7114),
     'trip zig split G-R-O': (2.66, 64),
     'castle green anchor (TTFAF)': (2.64, 44),
     'reverse chimney quint to base': (2.61, 41),
-    'anchor Y-G-Y': (2.60, 1839),
+    'shape Y-G-Y': (2.60, 1839),
     'roll quad asc G-R-Y-B': (2.59, 647),
     'sweep 6-note': (2.58, 495),
     'quad chimney G-R-B-O, Y peak': (2.57, 256),
     'ladder wide asc': (2.56, 143),
     'raked trill 3-finger': (2.53, 431),
     'trip zig split G-B-O': (2.47, 47),
-    'anchor B-G-B': (2.46, 1424),
+    'shape B-G-B': (2.46, 1424),
 }
 
 
 def relative_grade(name: str) -> float | None:
-    """Grade relative to NULL_GRADE. Positive means the pattern marks difficulty."""
+    """Grade relative to NULL_GRADE. Positive means the pattern marks difficulty.
+
+    Names here track the catalogue, so entries removed from it (the unattested castles,
+    the raked chimneys that duplicate cakes) are gone, and the twenty "anchor X-Y-X"
+    figures are "shape X-Y-X" now that they live in UNCONFIRMED_SHAPES.
+    """
     entry = PATTERN_GRADES.get(name)
     return None if entry is None else entry[0] - NULL_GRADE
 

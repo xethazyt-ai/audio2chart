@@ -26,16 +26,20 @@ class GradeTests(unittest.TestCase):
         self.assertIn("split", markers()[0])
 
     def test_universal_vocabulary_sits_below_the_null(self):
-        self.assertLess(relative_grade("anchor B-G-B"), 0.0)
+        self.assertLess(relative_grade("shape B-G-B"), 0.0)
 
     def test_grades_are_on_the_level_scale(self):
         for name, (grade, count) in PATTERN_GRADES.items():
             self.assertTrue(1.0 <= grade <= 4.0, name)
             self.assertGreaterEqual(count, MIN_OCCURRENCES, name)
 
-    def test_every_graded_pattern_is_in_the_catalogue(self):
+    def test_every_graded_pattern_is_known(self):
+        """Grades track the catalogue and the shapes demoted out of it."""
+        from chart.catalogue import UNCONFIRMED_SHAPES
+
+        known = set(CATALOGUE) | set(UNCONFIRMED_SHAPES)
         for name in PATTERN_GRADES:
-            self.assertIn(name, CATALOGUE)
+            self.assertIn(name, known)
 
     def test_an_unknown_pattern_has_no_grade(self):
         self.assertIsNone(relative_grade("not a pattern"))
