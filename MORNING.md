@@ -49,6 +49,20 @@ and median +0.227, with 31 of 60 real charts scoring lower. It has learned to wr
 guitar. Every fault above is about where notes go, what they are made of, and how they
 are paced -- not whether it knows the shapes.
 
+## What I would run next, and why it is one experiment
+
+Faults 1 and 3 may be the same defect. Both are the model behaving differently on its
+own output than on real history: the vocabulary collapse (zero taps, zero sustains)
+and the phrasing failure (1.1 rests a minute against 34) are both the free-running
+model failing to make a decision it makes correctly when teacher-forced. The pad-vs-note
+decision that suppresses rests is the same one that suppresses chords and taps.
+
+If that is right, `input_noise` improves both together, and that is a falsifiable
+prediction worth testing before building anything more elaborate. If taps come back and
+phrasing does not, they are separate problems and fault 3 needs its own fix.
+
+One run tests it, and `evaluate_chart.py` reads the answer off in one command.
+
 ## Ready for the next run
 
     loader.train_num_pieces: 1          (was 2)   ~10x faster, better gradient diversity
