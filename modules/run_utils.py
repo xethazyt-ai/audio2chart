@@ -153,4 +153,10 @@ def build_trainer(config: DictConfig, logger: object, monitor: str) -> L.Trainer
         num_sanity_val_steps=config.trainer.num_sanity_val_steps,
         gradient_clip_val=config.trainer.gradient_clip_val,
         accumulate_grad_batches=config.trainer.accumulate_grad_batches,
+        # `trainer.profiler=simple` splits a step into waiting for data versus running
+        # the model. Guessing which one owns the time has been wrong repeatedly here:
+        # a hand-rolled profile ran fp32 with a warm 60-file cache and reported the
+        # encoder at 0.246s and the loader at 0.292s, when the encoder actually costs
+        # 0.712s under the bf16 autocast training really uses.
+        profiler=OmegaConf.select(config, "trainer.profiler", default=None),
     )

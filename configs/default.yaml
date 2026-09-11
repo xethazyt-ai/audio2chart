@@ -35,6 +35,8 @@ trainer:
   gradient_clip_val: 1.0
   accumulate_grad_batches: 1
   num_sanity_val_steps: 0
+  # `simple` or `advanced` to find out where a step's time actually goes.
+  profiler: null
   # Short probe runs: `trainer.max_steps=50 trainer.limit_val_batches=5`
   max_steps: -1
   limit_train_batches: null
