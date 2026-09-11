@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # test fail on every Windows checkout -- Git's core.autocrlf=true writes CRLF, so the digest
 # never matched and the pins could not be told apart from a real edit.
 FROZEN_HASHES = {
-    "inference/engine.py": "7bd985aacc2df041f49555ec1810557354b62099",
+    "inference/engine.py": "5ba27428f536d9a0616ca8e225a891916dd3acc0",
     "inference/model_inference.py": "cd526cfbb27acd9921fb51a3c240f489bdad80c6",
     "inference/layers.py": "e44bfddff391fe20f482c7152eef11abd9dc88bd",
     "generate.py": "cefec8f9fe8fbeef10a050ab2251eee55e14cf42",

@@ -177,6 +177,20 @@ class Charter(nn.Module):
         total = full_seq_len * ((B + group - 1) // group)
         progress = tqdm(total=total, desc="Let's rock!")
 
+        # LIMITATION: chunks are decoded independently -- each starts from BOS with its
+        # own KV cache and no memory of the one before it. A generated chart therefore
+        # cannot have song-level structure: no build, no chorus busier than its verse,
+        # no resolution. Even with perfect audio conditioning the model cannot know it
+        # is in the second chorus rather than the first, because nothing carries over.
+        #
+        # It also leaves each chunk starting cold. Measured within one chunk, the first
+        # quarter held 15 notes against 47 in the rest, and a generated chart is 25%
+        # sparse over the first five seconds of every 30s window against a human 7% --
+        # suggestive at -1.28 sd on a single chart, not established.
+        #
+        # The fix is to prime each chunk with the tail of the previous one so note
+        # history is continuous across the boundary. That changes every generated
+        # chart, so it is a decision rather than a patch.
         for lo in range(0, B, group):
             hi = min(lo + group, B)
             emb_g = audio_emb[lo:hi]
