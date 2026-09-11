@@ -58,12 +58,43 @@ from human reliably would need ~130 songs. I said at n=7 that "generated charts 
 near zero while humans track the music"; at full sample that is directional, not
 established.
 
-## The good news
+## CORRECTION: most of the above came from one chart, and one chart lied
 
-The model's pattern vocabulary is human-level: lift +0.230 against a human mean +0.209
-and median +0.227, with 31 of 60 real charts scoring lower. It has learned to write
-guitar. Every fault above is about where notes go, what they are made of, and how they
-are paced -- not whether it knows the shapes.
+Eight charts generated from eight different songs, scored the same way:
+
+    metric        mean   median    human
+    chord        0.060    0.043    0.128
+    tap          0.195    0.224    0.194
+    sustain      0.082    0.000    0.049
+    nps         25.301   26.297    7.813
+    lift         0.072    0.007    0.209
+    rests       11.171    1.192   34.000
+
+**Taps are normal.** 0.224 median against a human 0.194. "Zero taps" was true of the
+Paparazzi chart alone. Withdrawn.
+
+**Pattern vocabulary is NOT human-level.** Median lift +0.007 -- at chance -- against a
+human +0.209. The Paparazzi chart's +0.230 was an outlier, and "the model has learned
+to write real guitar, every fault is about placement" was wrong. Withdrawn.
+
+**Density is 3.2x too high** (25.3 nps against 7.8), which I had backwards: the
+Paparazzi chart was too sparse at 5.5, so I recorded sparseness as the defect.
+
+What survives and is now properly established: sustains collapse (median 0.000, though
+one chart reached 0.655, so it is bimodal), phrasing is badly broken (median 1.19 rests
+a minute against 34), and chords run about a third of human.
+
+The real lesson is the spread. Across eight charts, sustain ran 0.000 to 0.655, pattern
+lift -0.172 to +0.383, rests 0.0 to 80.3 a minute. Output quality varies enormously by
+song, so no single chart characterises this model -- including the one that started
+this investigation.
+
+## The good news, reduced
+
+The model reaches human-level pattern vocabulary on its best charts -- one scored
++0.383 and another +0.340, above the human mean of +0.209 -- so the capability exists.
+It just is not reliable: the median chart sits at chance. That is a weaker and more
+useful claim than the one it replaces.
 
 ## What I would run next, and why it is one experiment
 
