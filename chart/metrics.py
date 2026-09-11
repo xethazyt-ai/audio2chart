@@ -67,6 +67,27 @@ PER_CHART_MEDIAN: dict[str, float] = {
 }
 
 
+# What separates the four difficulties, measured over 120 songs charted at all four
+# levels -- same song, same charter, so the differences are difficulty itself.
+#
+# Difficulty is not density. Notes per second rises only 1.8x across the whole ladder,
+# while mean run length is flat through Hard and then quadruples at Expert, and the tap
+# rate jumps 72% at that same step. Chords peak at HARD and fall at Expert; sustains
+# decrease monotonically as difficulty rises. So the Expert signature is long unbroken
+# runs and tap technique, not more notes -- a difficulty control that scales density
+# produces a dense Hard chart, not an Expert one.
+DIFFICULTY_LADDER: dict[str, dict[str, float]] = {
+    "Easy":   {"nps": 5.68, "pct_chord": 0.067, "pct_tap": 0.127,
+               "pct_sustain": 0.112, "pattern_lift": 0.135, "mean_run": 55.7},
+    "Medium": {"nps": 6.20, "pct_chord": 0.131, "pct_tap": 0.142,
+               "pct_sustain": 0.091, "pattern_lift": 0.144, "mean_run": 56.5},
+    "Hard":   {"nps": 6.93, "pct_chord": 0.154, "pct_tap": 0.152,
+               "pct_sustain": 0.078, "pattern_lift": 0.203, "mean_run": 58.1},
+    "Expert": {"nps": 10.03, "pct_chord": 0.139, "pct_tap": 0.262,
+               "pct_sustain": 0.062, "pattern_lift": 0.220, "mean_run": 232.0},
+}
+
+
 CORPUS_REFERENCE: dict[str, float] = {
     "chord_1": 0.8726,
     "chord_2": 0.0891,
