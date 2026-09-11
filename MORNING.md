@@ -1,4 +1,73 @@
-# Overnight status
+# Status
+
+Branch `expressive-vocab-finetune`. 13 commits over the night and day, nothing pushed,
+no PRs opened, `configs/audio.yaml` untouched. 242 tests passing.
+
+## Three faults, separated
+
+The Paparazzi chart was bad for three independent reasons. Each needs a different fix,
+and treating them as one problem is why the diagnosis took so long.
+
+**1. It is missing most of the chart vocabulary.** Zero chords, zero taps, 0.1%
+sustains, against human medians of 0.128, 0.194 and 0.049. Not the model's fault --
+teacher-forced it predicts all three at near-human rates (taps 0.181 against a true
+0.197), and the decode/writer path is bit-exact. The cause is exposure bias in the
+decoding loop: the tap rate runs away 0.224 -> 0.723 across one 30s chunk as the model
+conditions on its own output, and collapses to a flat zero at a lower temperature. No
+sampler setting fixes it. *Fix staged: `model.input_noise`, off by default.*
+
+**2. It does not follow the music.** Audio conditioning is real and consistent but
+weak: swapping in another song's audio costs +0.1891 nats on note positions and hurts
+on 20 of 20 batches, while the note-history prior carries the rest. *Fix staged:
+`freeze_layers: 4` gives 45% more trainable parameters in the blocks that read audio.
+Classifier-free guidance is being measured now.*
+
+**3. It has no dynamics.** It plays Expert-marker patterns in 14.9% of pattern
+instances against a human 2.7% -- 5.5x, +3.23 sd -- with mean runs of 235 notes and
+flat density. Real Expert charts are ordinary vocabulary arranged to become hard in
+places; this plays at maximum intensity throughout. *No fix staged; this is the one
+that most resembles what Robert actually described.*
+
+## The good news
+
+The model's pattern vocabulary is human-level: lift +0.230 against a human mean +0.209
+and median +0.227, with 31 of 60 real charts scoring lower. It has learned to write
+guitar. Every fault above is about where notes go, what they are made of, and how they
+are paced -- not whether it knows the shapes.
+
+## Ready for the next run
+
+    loader.train_num_pieces: 1          (was 2)   ~10x faster, better gradient diversity
+    trainer.accumulate_grad_batches: 8  (was 4)   same effective batch
+    model.freeze_layers: 4              (was 8)   +45% trainable, in the audio blocks
+    model.input_noise: 0.05-0.1         (was 0)   against fault 1
+
+An epoch drops from ~22 hours to under 3. `evaluate_conditioning.py` scores fault 2 on
+a checkpoint, `evaluate_chart.py` scores faults 1 and 3 on a chart.
+
+## Answering the difficulty question
+
+Difficulty is qualitative, not density. Over 120 songs charted at all four levels by
+the same charter, notes per second rises only 1.8x across the whole ladder, while mean
+run length is flat through Hard and then quadruples at Expert, where the tap rate also
+jumps 72%. Chords peak at HARD. Sustains run backwards.
+
+Catalogue patterns are now graded from the corpus rather than by hand -- 165,792
+occurrences, in `chart/grades.py`. Read against the null of 2.76, not 2.5: Expert
+sections are denser, so every pattern carries an Expert bias for free. Corrected, only
+13 of 67 patterns mark difficulty at all; the rest is universal vocabulary.
+
+Together those say difficulty comes from *arrangement*, not from exotic pattern
+selection -- which argues for JM's annotated-section registry over a scalar knob.
+
+**One question for Robert:** `trip zig split G-Y-O` grades +1.02 above null and `trip
+zig split G-B-O` grades -0.29 below it. Same family, opposite ends. G-Y-O splits evenly
+(deltas 2, 2), G-B-O does not (3, 1). Is split regularity what makes these hard, or are
+47 occurrences of G-B-O too few to trust?
+
+---
+
+# Detailed record
 
 Branch `expressive-vocab-finetune`. Nothing pushed, no PRs opened. Six local commits.
 
