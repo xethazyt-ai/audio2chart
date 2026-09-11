@@ -75,16 +75,30 @@ def base_unit(signature: tuple[int, ...]) -> tuple[int, ...]:
 
 
 def is_known(signature: tuple[int, ...], known: set[tuple[int, ...]]) -> bool:
-    """Known outright, or an extended repetition of something known."""
-    if signature in known:
+    """Known outright, or an exact repetition of something known.
+
+    Deliberately strict. An earlier version also accepted a signature whose leading
+    half was catalogued, which dismissed anything merely *starting* with a common
+    shape -- including the chained descent O B Y R | B Y R G, which Robert confirms is
+    a pattern and which begins with a descending quad. Suppressing real figures is a
+    worse failure here than listing a few known ones twice.
+    """
+    return signature in known or base_unit(signature) in known
+
+
+# Four notes on one fret is not a pattern -- Robert's catalogue has no notion of it,
+# and treating repeated same-fret notes as a figure imports a guitar term that does
+# not apply to charting.
+def is_static(signature: tuple[int, ...]) -> bool:
+    """Mostly repeated notes on one fret, with at most an occasional move.
+
+    Robert: repeated same-fret notes are not a pattern. All-zero catches the pure
+    case, but "eight reds then eight greens" is the same thing with one step in the
+    middle, so anything more than half static is excluded too.
+    """
+    if not signature:
         return True
-    unit = base_unit(signature)
-    if unit in known:
-        return True
-    # A bar may hold two reps of a longer figure without the deltas being periodic
-    # end to end, so also test the leading half.
-    half = signature[:len(signature) // 2]
-    return bool(half) and half in known and signature[:len(half)] == half
+    return sum(1 for delta in signature if delta == 0) * 2 >= len(signature)
 
 
 def bar_signatures(chart_path: str, tokenizer, span: int):
@@ -148,7 +162,7 @@ def main():
     print(f"{'count':>7}{'charts':>8}  {'known':<7}{'notes':<26}signature")
     shown = 0
     for signature, count in counts.most_common():
-        if charts_with[signature] < 3:
+        if charts_with[signature] < 3 or is_static(signature):
             continue
         mark = "yes" if is_known(signature, known) else "NEW"
         print(f"{count:>7}{charts_with[signature]:>8}  {mark:<7}"
