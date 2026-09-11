@@ -100,6 +100,7 @@ class Charter(nn.Module):
         device: str = "cuda" if torch.cuda.is_available() else "cpu",
         allowed_ids: Optional[List[int]] = None,
         guidance: float = 0.0,
+        pad_bias: float = 0.0,
     ) -> List[torch.Tensor]:
         """
         Fast batched generation with KV-cache + pre-allocation.
@@ -154,7 +155,7 @@ class Charter(nn.Module):
                         dtype=torch.long, device=device)
         ids[:, 0] = self.config.bos_token_id
 
-        sample_fn = self._make_sampler(temperature, top_k, device, allowed_ids)
+        sample_fn = self._make_sampler(temperature, top_k, device, allowed_ids, pad_bias)
         neg_emb = self._contrast_audio(audio_emb) if guidance > 0 else None
 
         # Guidance runs a second branch with its own KV caches, so it doubles cache
@@ -254,19 +255,66 @@ class Charter(nn.Module):
         return blocked
 
     def _make_sampler(self, temperature: float, top_k: int, device: torch.device,
-                      allowed_ids=None):
+                      allowed_ids=None, pad_bias: float = 0.0):
+        """`pad_bias` is added to the pad token's logit, which controls note density.
+
+        Density and vocabulary richness pull against each other under a single
+        temperature knob. Teacher-forced the model is well calibrated -- 0.343 of its
+        mass on chords against a true 0.369, 0.133 on taps against 0.132 -- but free
+        running it over-emits notes badly, and raising temperature to recover chords,
+        taps and sustains multiplies that. Measured on one clip against a corpus 7.2
+        notes per second: temperature 0.5 gives 12.2 nps and no sustains at all, while
+        temperature 1.0 gives the right tap and sustain rates at ~44 nps.
+
+        Every step is really two decisions -- emit or stay silent, and what to emit --
+        and one temperature governs both, so biasing pad ought to separate them.
+
+        MEASURED: it does not, and the way it fails is the useful part. At temperature
+        1.0, top_k 128, against a corpus 7.2 notes per second:
+
+            pad+0   43.7 nps   tap 0.424
+            pad+1   30.0 nps   tap 0.353
+            pad+2   14.8 nps   tap 0.166
+            pad+3    0.66 nps  tap 0.063
+            pad+4    0.04 nps
+
+        Nothing lands near 7.2, and one unit between pad+2 and pad+3 collapses output
+        22-fold. The bias is also not orthogonal: suppressing notes preferentially
+        suppresses chords and taps, so density and vocabulary stay coupled.
+
+        Both follow from the loop being self-reinforcing -- fewer notes emitted changes
+        the history the model reads, which makes it expect fewer still, so any
+        perturbation amplifies instead of settling. That gain is exposure bias, and it
+        shows directly as drift: over one 30s chunk at temperature 1.0 the tap rate
+        climbs 0.224 -> 0.454 -> 0.671 -> 0.723, while at temperature 0.5 it is a flat
+        0.000 with no sustains. Sharpening suppresses the runaway and the vocabulary
+        together.
+
+        Kept as a diagnostic, defaulting to no-op, because it is the knob that made the
+        feedback visible and the idea is an obvious one to try again. The fix for the
+        vocabulary collapse is in training, not here.
+        """
         blocked = self._style_mask(allowed_ids, device)
+        pad_id = self.config.pad_token_id
 
         if temperature <= 0:                     # greedy
             def sample(logits):
                 if blocked is not None:
                     logits = logits.masked_fill(blocked, -float('inf'))
+                if pad_bias:
+                    logits = logits.clone()
+                    logits[..., pad_id] += pad_bias
                 return logits.argmax(dim=-1, keepdim=True)
             return sample
 
         def sample(logits):
             if blocked is not None:
                 logits = logits.masked_fill(blocked, -float('inf'))
+
+            # Before temperature, so the bias means the same thing at any temperature.
+            if pad_bias:
+                logits = logits.clone()
+                logits[..., pad_id] += pad_bias
 
             if temperature != 1.0:
                 logits = logits / temperature
