@@ -39,3 +39,18 @@ class ReferenceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GeneratedBaselineTests(unittest.TestCase):
+    """Where this model stood, so a future one can be compared against it."""
+
+    def test_taps_are_not_a_defect(self):
+        """Recorded because "zero taps" was claimed from a single chart and is wrong."""
+        from chart.metrics import GENERATED_BASELINE, PER_CHART_MEDIAN
+        self.assertGreater(GENERATED_BASELINE["pct_tap"], PER_CHART_MEDIAN["pct_tap"])
+
+    def test_the_real_defects_are_recorded(self):
+        from chart.metrics import GENERATED_BASELINE, PER_CHART_MEDIAN
+        self.assertLess(GENERATED_BASELINE["pct_sustain"], PER_CHART_MEDIAN["pct_sustain"])
+        self.assertGreater(GENERATED_BASELINE["nps"], 3 * PER_CHART_MEDIAN["nps"])
+        self.assertLess(GENERATED_BASELINE["rests_per_minute"], 5.0)

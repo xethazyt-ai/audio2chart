@@ -19,6 +19,14 @@ current model plays continuously and then stops dead for seconds at a time.
 human notes, so any violation is a defect -- though a chart with no sustains passes
 vacuously, which is worth knowing when reading the result.
 
+ONE CHART DOES NOT CHARACTERISE A MODEL. Measured across eight charts from eight
+songs, this model's output ranges from 0.000 to 0.655 sustains, -0.172 to +0.383
+pattern lift, and 0 to 80 rests a minute. A whole day of this project's conclusions
+came from a single chart and several of them were wrong in both directions -- taps
+called absent when the median chart matches humans, pattern vocabulary called
+human-level when the median chart is at chance, density called too low when it is 3.2x
+too high. Score several charts before saying anything about the model.
+
 *Does it follow the music?* Only with --audio. Note density against the onset
 envelope, which is meaningful in aggregate and noisy for one chart (per-song sd 0.284).
 """
@@ -121,6 +129,8 @@ def main():
     profile = profile_from_timed(timed, tokenizer)
 
     print(f"{args.chart}")
+    print("  NOTE: one chart does not characterise a model -- this model's output")
+    print("        varies enormously by song. Score several before concluding.")
     print(f"  {profile.positions} positions over {profile.duration_seconds:.1f}s\n")
     print(f"  {'metric':<16}{'chart':>10}{'human':>10}{'delta':>10}")
     # Report the chord rate, not the single-note rate. A chart with no chords at all

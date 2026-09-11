@@ -88,6 +88,22 @@ DIFFICULTY_LADDER: dict[str, dict[str, float]] = {
 }
 
 
+# What the current fine-tuned model actually produces, over 8 charts from 8 songs at
+# the shipped sampling defaults. Kept so a future run can be compared against where
+# this one stood, and because the spread is the point: sustain ran 0.000 to 0.655,
+# pattern lift -0.172 to +0.383, rests 0.0 to 80.3 a minute. No single chart
+# characterises this model.
+GENERATED_BASELINE: dict[str, float] = {
+    "pct_chord": 0.043,      # human median 0.128
+    "pct_tap": 0.224,        # human median 0.194 -- normal
+    "pct_sustain": 0.000,    # human median 0.049 -- collapsed, bimodal
+    "nps": 26.297,           # human median 7.813 -- 3.2x too dense
+    "pattern_lift": 0.007,   # human mean 0.209 -- at chance
+    "rests_per_minute": 1.192,   # human 34.0
+}
+"""Medians. Compare a future model against these to see whether it improved."""
+
+
 CORPUS_REFERENCE: dict[str, float] = {
     "chord_1": 0.8726,
     "chord_2": 0.0891,
