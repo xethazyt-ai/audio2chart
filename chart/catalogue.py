@@ -86,17 +86,17 @@ CATALOGUE: dict[str, str] = {
     "reverse chimney quad": "O B Y R Y B O R",
     "reverse chimney quint": "O B Y R G R Y B O R",
     "reverse chimney quint to base": "O B Y R G R Y B O G",
-    "raked chimney trip 2-finger": "Y G Y G R B R G Y",
-    "raked chimney quad 2-finger": "O G O G R Y B Y R G O",
-    "raked chimney quint 2-finger": "O G O G R Y B O B Y R G O",
-    "raked chimney trip 3-finger": "Y G Y G Y G R B R G Y",
-    "raked chimney quad 3-finger": "O G O G O G R Y B Y R G O",
-    "raked chimney quint 3-finger": "O G O G O G R Y B O B Y R G O",
     # --- cakes -----------------------------------------------------------------
-    "cake 6-note": "G R G O B O",
-    "cake 8-note": "G R G R O B O B",
-    "cake 10-note": "G R G R G O B O B O",
-    "cake 12-note": "G R Y R G R O B Y B O B",
+    # Corrected from Robert's own sequences and confirmed in Hot N Cold, where the
+    # 8-note appears as O G O G R Y R G and the 12-note as B G B G B G R Y B Y R G.
+    # The previous entries described two trills back to back (G R G R O B O B), which
+    # is not the shape: a cake trills against the anchor fret, repeats that, then
+    # descends back to it. Written wrong, they never matched anything.
+    "cake 6-note": "Y G Y G R G",
+    "cake 8-note": "B G B G R Y R G",
+    "cake 10-note": "B G B G B G R Y R G",
+    "cake 12-note": "O G O G O G R Y B Y R G",
+    "cake 14-note": "O G O G O G R Y B O B Y R G",
     # --- slides and H ----------------------------------------------------------
     "triangle slide 6-note": "G R Y B Y R",
     "triangle slide 8-note": "G R Y B O B Y R",
