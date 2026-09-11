@@ -1,3 +1,7 @@
+import os
+import time
+from contextlib import contextmanager
+
 import torch
 import torch.nn.functional as F
 import lightning as L
@@ -15,6 +19,30 @@ from omegaconf import OmegaConf
 #                             #
 #                             #
 ###############################
+
+
+@contextmanager
+def _stage_timer(name):
+    """Split the forward pass into encoder versus decoder. Off unless A2C_TIME_STEP is set.
+
+    Lightning's `trainer.profiler=simple` is the right tool for finding which *phase* of
+    a step owns the time -- it is what showed the dataloader at 0.1% -- but it cannot see
+    inside training_step. This can: it reports the frozen Encodec encoder at 0.065 s
+    against 0.089 s for the whole 245 M-parameter decoder, at a 15 s window.
+
+    The synchronize calls are why this is opt-in. They serialise the pipeline, so leaving
+    it on would slow down the thing it is measuring.
+    """
+    if not os.environ.get("A2C_TIME_STEP"):
+        yield
+        return
+    torch.cuda.synchronize()
+    started = time.perf_counter()
+    try:
+        yield
+    finally:
+        torch.cuda.synchronize()
+        print(f"A2C_TIME {name}={time.perf_counter() - started:.4f}", flush=True)
 
 
 class NotesTransformer(L.LightningModule):
@@ -491,8 +519,10 @@ class WaveformTransformerDiscrete(L.LightningModule):
             raise ValueError("Audio batch contains non-finite values")
 
         # Forward pass
-        audio_codes = self._encode_audio(audio, padding_mask)
-        logits = self.transformer(input_tokens, audio_codes, class_ids=class_ids)
+        with _stage_timer("encode"):
+            audio_codes = self._encode_audio(audio, padding_mask)
+        with _stage_timer("transformer"):
+            logits = self.transformer(input_tokens, audio_codes, class_ids=class_ids)
         logits_flat = logits.reshape(-1, self.vocab_size)
         targets_flat = target_tokens.reshape(-1)
 
