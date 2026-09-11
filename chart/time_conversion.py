@@ -156,6 +156,38 @@ def seconds_to_tick(time_sec, bmp_segments, resolution, segment_times=None):
     return int(round(base_tick + delta_ticks))
 
 
+# Subdivisions a charter actually writes, coarsest first. Triplet divisions are in
+# here because 1/12 and 1/24 are ordinary in this music and a power-of-two-only list
+# would snap them onto the wrong grid.
+SNAP_CHOICES = (4, 8, 12, 16, 24, 32, 48, 64, 96)
+
+
+def choose_snap(ticks, resolution, choices=SNAP_CHOICES):
+    """The coarsest subdivision that does not merge two notes into one.
+
+    Snapping is what turns grid output into exact ticks -- at a 10 ms grid the +/-5 ms
+    error is under 20% of a subdivision even for 1/48 notes at 200 BPM, so a note never
+    lands in the wrong slot. But the subdivision has to fit the passage: snap a 24th
+    note run to 16ths and notes collapse onto each other.
+
+    Coarsest-that-preserves is the right rule because it lands on the grid the charter
+    was most likely using, without inventing precision the music does not have.
+
+    Returns 0 when nothing works, meaning "do not snap".
+    """
+    positions = sorted(set(int(t) for t in ticks))
+    if len(positions) < 2:
+        return 0
+    for divisions in choices:
+        step = resolution * 4 / divisions
+        if step < 1:
+            continue
+        snapped = {int(round(t / step)) for t in positions}
+        if len(snapped) == len(positions):
+            return divisions
+    return 0
+
+
 def convert_notes_to_ticks(tokens_list, time_list, fixed_bpm=200, resolution=480,
                            bpm_events=None, snap=0, pad_token_id=34, tokenizer=None):
     """

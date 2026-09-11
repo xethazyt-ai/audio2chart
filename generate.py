@@ -4,7 +4,7 @@ import sys
 import torch
 
 from inference.engine import Charter
-from chart.time_conversion import convert_notes_to_ticks
+from chart.time_conversion import choose_snap, convert_notes_to_ticks
 from chart.tokenizer import SimpleTokenizerGuitar
 from chart.chart_writer import fill_expert_single
 from chart.tempo import (parse_sync_track, detect_tempo, first_onset,
@@ -110,9 +110,12 @@ def main():
     )
     parser.add_argument(
         "--snap",
-        type=int,
-        default=0,
-        help="Snap notes to the nearest 1/SNAP note (e.g. 32). Only sensible with a real beat grid."
+        default="auto",
+        help="Snap notes to the nearest 1/N note. 'auto' (the default) picks the "
+             "coarsest subdivision that does not merge two notes, which is what turns "
+             "grid output into exact ticks; a number forces one; 0 disables it. Auto "
+             "only applies when the tempo is known -- snapping to a wrong tempo is "
+             "worse than not snapping."
     )
 
     # Output path (optional)
@@ -193,9 +196,25 @@ def main():
             time_list = [t + shift for t in time_list]
             print(f"First generated note {time_list[first] - shift:.3f}s "
                   f"-> {anchor_time:.3f}s (shifted {shift:+.3f}s)")
+    # Work out the subdivision before converting, since 'auto' needs the tick positions
+    # the notes would land on. Snapping is only safe with a trustworthy tempo: exact
+    # from --sync-from, estimated from --detect-tempo, asserted by --bpm.
+    snap = args.snap
+    if isinstance(snap, str):
+        if snap.lower() == "auto":
+            unsnapped = convert_notes_to_ticks(
+                seqs, time_list, fixed_bpm=args.bpm, resolution=resolution,
+                bpm_events=bpm_events, snap=0, pad_token_id=tokenizer.pad_id,
+                tokenizer=tokenizer)
+            snap = choose_snap([item[0] for item in unsnapped], resolution)
+            print(f"Snapping to 1/{snap} notes"
+                  if snap else "No subdivision fits; leaving notes unsnapped")
+        else:
+            snap = int(snap)
+
     ticked_notes = convert_notes_to_ticks(seqs, time_list, fixed_bpm=args.bpm,
                                           resolution=resolution, bpm_events=bpm_events,
-                                          snap=args.snap, pad_token_id=tokenizer.pad_id,
+                                          snap=snap, pad_token_id=tokenizer.pad_id,
                                           tokenizer=tokenizer)
     decoded_full = tokenizer.decode(ticked_notes, resolution=resolution)
 

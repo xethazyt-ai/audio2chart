@@ -86,7 +86,15 @@ def detect_tempo(y, sr, bpm_range=DEFAULT_BPM_RANGE, hop_length=256):
         if value > best[2]:
             best = (float(bpm), phase, value)
 
-    return best
+    # Round to a tenth. The search reports things like 140.006, and that precision is
+    # estimation noise rather than signal -- songs are recorded to a click, so the true
+    # tempo is almost always a round number and a charter writes one. Rounding is
+    # therefore more accurate, not less, and it keeps the beat grid on values a human
+    # would have typed. The phase is re-fitted for the rounded value so the grid still
+    # lands on the beat.
+    rounded = round(best[0], 1)
+    phase, value = best_phase(rounded, 0.002)
+    return rounded, phase, value
 
 
 FIRST_ONSET_FLOOR = 0.25

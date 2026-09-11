@@ -90,3 +90,43 @@ def test_snapping_lands_on_the_beat_grid_the_map_defines():
     assert ticks, "snapping dropped every note"
     assert all(tick % grid == 0 for tick in ticks), f"off-grid ticks: {ticks}"
     assert ticks[0] == anchor_tick, "the first note must stay on its beat line"
+
+
+def test_detected_tempo_is_rounded_to_a_tenth():
+    """140.006 BPM is estimation noise, not a real tempo.
+
+    Songs are recorded to a click and charters write round numbers, so the extra digits
+    the search produces are spurious. Rounding keeps the grid on values a human would
+    have typed, and the phase is re-fitted so the grid still lands on the beat.
+    """
+    import inspect
+
+    from chart.tempo import detect_tempo
+
+    source = inspect.getsource(detect_tempo)
+    assert "round(" in source
+    assert "best_phase(rounded" in source
+
+
+def test_snap_choice_preserves_every_note():
+    """Snapping to too coarse a subdivision merges notes; too fine invents precision."""
+    from chart.time_conversion import choose_snap
+
+    resolution = 192
+    sixteenths = [i * (resolution // 4) for i in range(16)]
+    assert choose_snap(sixteenths, resolution) == 16
+
+    # A 24th-note run must not be snapped onto a 16th grid.
+    twentyfourths = [i * (resolution // 6) for i in range(12)]
+    assert choose_snap(twentyfourths, resolution) in (12, 24)
+
+    # Quarter notes need nothing finer than quarters.
+    quarters = [i * resolution for i in range(8)]
+    assert choose_snap(quarters, resolution) == 4
+
+
+def test_snap_choice_handles_degenerate_input():
+    from chart.time_conversion import choose_snap
+
+    assert choose_snap([], 192) == 0
+    assert choose_snap([100], 192) == 0
