@@ -37,7 +37,9 @@ def main():
     parser.add_argument(
         "audio_path",
         type=str,
-        help="Path to the input audio file (must be >= 30 seconds)."
+        help="Path to the input audio file. It must be at least one window long; "
+             "the window comes from the model's config.json, and is 15 s for models "
+             "trained after the grid change (it was 30 s before)."
     )
 
     # Optional model + sampling args

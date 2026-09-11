@@ -23,6 +23,25 @@ tier 8 in another. The report breaks error down by pack for that reason.
 
 *Held-out error is the only number worth reading.* Fitting ten features to 801 points
 will look excellent in-sample whatever the truth is.
+
+MEASURED RESULT, so no one refits this hoping for better. Held-out MAE is 5.43 tiers
+against 6.26 for predicting a constant -- a 13% improvement, useless on a 1-26 scale,
+17% of charts within two tiers. That is not a feature problem and more features will
+not fix it:
+
+  two human label sources disagreeing with each other   5.47 tiers
+  this model, held out                                  5.43 tiers
+
+The model is already at the floor. On the 439 charts carrying both labels the median
+signed difference is 0, so there is nothing to calibrate away -- charters simply do not
+agree. A constant prediction (5.30) even beats one source predicting the other.
+
+What does work is ordering inside a single pack: median best-feature rank correlation
+is 0.50 within an author's own setlist against 0.26 pooled across all of them, peaking
+at 0.86 (nps, Shobas_ Charts) and 0.69 (peak10, Community Track Packs). So the features
+do track difficulty; the tier *numbers* are not on one scale. A grader that works needs
+either a per-pack offset fitted alongside, or pairwise judgements from one person --
+Robert has a consistent scale in his head, which is where this started.
 """
 
 from __future__ import annotations
@@ -105,6 +124,30 @@ def solve(matrix: list[list[float]], target: list[float], ridge: float = 1e-3):
     return [rhs[i] / normal[i][i] if abs(normal[i][i]) > 1e-12 else 0.0 for i in range(width)]
 
 
+def spearman(xs, ys):
+    """Rank correlation, ties averaged. Ordering is the question here, not scale."""
+    def ranks(values):
+        order = sorted(range(len(values)), key=lambda i: values[i])
+        out = [0.0] * len(values)
+        index = 0
+        while index < len(order):
+            last = index
+            while last + 1 < len(order) and values[order[last + 1]] == values[order[index]]:
+                last += 1
+            average = (index + last) / 2 + 1
+            for position in range(index, last + 1):
+                out[order[position]] = average
+            index = last + 1
+        return out
+
+    rx, ry = ranks(xs), ranks(ys)
+    mx, my = statistics.mean(rx), statistics.mean(ry)
+    numerator = sum((a - mx) * (b - my) for a, b in zip(rx, ry))
+    denominator = (sum((a - mx) ** 2 for a in rx) * sum((b - my) ** 2 for b in ry)) ** 0.5
+    return numerator / denominator if denominator else 0.0
+
+
+
 def main():
     args = parse_args()
     labels = json.loads(args.labels.read_text(encoding="utf-8"))
@@ -181,6 +224,40 @@ def main():
     print("\nerror by setlist (do the packs share a scale?)")
     for pack, values in sorted(by_pack.items(), key=lambda kv: -len(kv[1]))[:6]:
         print(f"  {pack[:44]:<46}{len(values):>4} charts  MAE {statistics.mean(values):.2f}")
+
+    # Bad features or bad labels? The MAE above cannot tell those apart, and the honest
+    # reading of it needs one more number: measured against each other on the 439 charts
+    # carrying both, the two human label sources disagree by 5.47 tiers. A held-out MAE
+    # near that is at the floor, and no amount of feature work moves it.
+    #
+    # Rank correlation inside a single pack separates the two cases. If the features
+    # order charts correctly within one author's scale and only fail when pooled, the
+    # labels are the problem, and the fix is a ranking model with a per-pack offset --
+    # or Robert's own pairwise judgements, which come from one consistent scale.
+    features_by_pack = defaultdict(list)
+    for tier_value, row, path in rows:
+        pack = path.split("\\")[4] if len(path.split("\\")) > 5 else "?"
+        features_by_pack[pack].append((row, tier_value))
+
+    print("\nbest single feature by rank correlation (ordering within one pack)")
+    best_per_pack = []
+    for pack, items in sorted(features_by_pack.items(), key=lambda kv: -len(kv[1]))[:8]:
+        pack_tiers = [t for _, t in items]
+        if len(items) < 20 or len(set(pack_tiers)) < 3:
+            continue
+        score, name = max((abs(spearman([row[key] for row, _ in items], pack_tiers)), key)
+                          for key in FEATURE_NAMES)
+        best_per_pack.append(score)
+        print(f"  {pack[:44]:<46}{len(items):>4} charts  |rho| {score:.2f}  ({name})")
+
+    pooled_score, pooled_name = max(
+        (abs(spearman([row[key] for _, row, _ in rows], [t for t, _, _ in rows])), key)
+        for key in FEATURE_NAMES)
+    if best_per_pack:
+        print(f"\n  median within a pack {statistics.median(best_per_pack):.2f}"
+              f"   pooled across packs {pooled_score:.2f} ({pooled_name})")
+        print("  A large gap means the features work and the tier numbers are not on one")
+        print("  scale; a small gap means the features do not capture difficulty.")
 
 
 if __name__ == "__main__":
