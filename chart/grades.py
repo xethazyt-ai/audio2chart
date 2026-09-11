@@ -129,9 +129,15 @@ Two claims that looked like the same defect did NOT survive their baselines, and
 recorded so they are not repeated: the generated chart's density is *more* variable
 than 93% of human charts (nps variation 0.606 against a human mean 0.409), and its
 235-note mean run is normal for Expert, whose own mean is 232. What does survive
-alongside the marker overuse is that the chart never rests -- no gap between notes
-exceeds 250 ms anywhere in it, where 118 of 120 human Expert charts have broader
-rhythm. The long runs follow from that rather than from long phrases.
+alongside the marker overuse is phrasing. A human Expert chart breathes constantly:
+34 rests a minute, typically 0.38s, a third of the song spent at rest, and only 1 of
+120 charts has none. The generated chart rests 1.1 times a minute for a median 5.82s
+-- 31x fewer, 15x longer, roughly the same total silence arranged completely
+differently. It plays continuously and then stops dead. The long runs follow from
+that rather than from long phrases.
+
+Stated first as "no gap exceeds 250 ms anywhere, not rare, none", which was wrong:
+there are about three, and they showed as 0.00 in a histogram printed to two decimals.
 """
 
 

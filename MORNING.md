@@ -22,9 +22,11 @@ on 20 of 20 batches, while the note-history prior carries the rest. *Fix staged:
 `freeze_layers: 4` gives 45% more trainable parameters in the blocks that read audio.
 Classifier-free guidance is being measured now.*
 
-**3. It never rests, and it overspends the hard patterns.** No gap between notes
-exceeds 250 ms anywhere in the chart -- not rare, none -- where 118 of 120 human Expert
-charts have broader rhythm. And Expert-marker patterns make up 14.9% of its pattern
+**3. It does not phrase, and it overspends the hard patterns.** A human Expert chart
+breathes constantly -- 34 rests a minute, typically 0.38s, a third of the song at rest,
+and only 1 of 120 charts has none. The generated chart rests 1.1 times a minute for a
+median 5.82s: 31x fewer, 15x longer, about the same total silence arranged completely
+differently. It plays continuously and then stops dead. And Expert-marker patterns make up 14.9% of its pattern
 instances against a human 2.7% (+3.23 sd), where a charter spends one for emphasis.
 Real Expert charts are ordinary vocabulary that becomes hard in places. *No fix
 staged.*
@@ -33,7 +35,12 @@ Two things I claimed here first and had to retract, both from judging a number w
 a baseline: the chart's density is *more* variable than 93% of human charts (0.606
 against a human mean 0.409), not flat; and its 235-note mean run is normal for Expert,
 whose own mean is 232 -- I cited it as a defect against a measurement I had taken that
-morning. The long runs are a consequence of never resting, not a separate problem.
+morning. The long runs are a consequence of the phrasing, not a separate problem.
+
+I also first wrote fault 3 as "no gap exceeds 250 ms anywhere, not rare, none". There
+are about three; they printed as 0.00 in a two-decimal histogram. Three overstatements
+in one fault, each caught only by measuring the human baseline -- worth remembering
+before acting on any "it never does X" in these notes.
 
 ## The good news
 
