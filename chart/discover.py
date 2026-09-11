@@ -180,3 +180,66 @@ def classify(lift: float) -> str:
     if lift >= PATTERN_LIFT:
         return "pattern-like"
     return "unclear"
+
+
+def catalogue_lift(runs: list[list[int]], shuffles: int = 3,
+                   catalogue: dict[str, str] | None = None) -> tuple[float, float]:
+    """Catalogue coverage, and the coverage the same notes reach by chance.
+
+    Raw coverage cannot be compared between charts. The catalogue holds two-delta
+    shapes -- anchor is (1, -1), trip ascending is (1, 1) -- that random fret motion
+    produces constantly, and how often depends on how a chart uses the neck: measured
+    floors ranged from 13% to 35% across three charts. A chart that wanders the whole
+    neck scores a high floor for free, one that camps on two frets scores a low one.
+
+    Shuffling the frets within each run destroys every real pattern while preserving
+    note count, run lengths and which frets appear, so the difference isolates authored
+    structure. Measured over 60 human Expert charts the lift is mean +0.209, median
+    +0.227, sd 0.167, quartiles +0.078 to +0.336.
+
+    That spread is wide enough that a single chart says little on its own, which is the
+    same caution the responsiveness metric needs. It was still decisive once: a
+    generated chart read 52.8% against a human 69.1% pooled, which looks like half the
+    vocabulary, but its floor was 29.8% and its lift +0.230 -- the human median, with
+    31 of 60 real charts scoring lower.
+
+    `runs` is a list of fret sequences, as `single_note_runs` produces them.
+
+    Returns (coverage, chance_floor).
+    """
+    import random as _random
+    import statistics
+
+    order = sorted(known_signatures(catalogue), key=len, reverse=True)
+
+    def cover(sequences: list[list[int]]) -> float | None:
+        seen = claimed = 0
+        for frets in sequences:
+            deltas = [b - a for a, b in zip(frets, frets[1:])]
+            if not deltas:
+                continue
+            seen += len(deltas)
+            claimed += sum(claim_run(deltas, order))
+        return claimed / seen if seen else None
+
+    real = cover(runs)
+    if real is None:
+        return 0.0, 0.0
+
+    floors = []
+    for seed in range(shuffles):
+        rng = _random.Random(seed)
+        shuffled = []
+        for frets in runs:
+            copy = list(frets)
+            rng.shuffle(copy)
+            shuffled.append(copy)
+        value = cover(shuffled)
+        if value is not None:
+            floors.append(value)
+    return real, statistics.mean(floors) if floors else 0.0
+
+
+HUMAN_LIFT_MEAN = 0.209
+HUMAN_LIFT_SD = 0.167
+"""Catalogue lift over 60 human Expert charts, for scoring a generated one."""

@@ -101,6 +101,7 @@ class Charter(nn.Module):
         allowed_ids: Optional[List[int]] = None,
         guidance: float = 0.0,
         pad_bias: float = 0.0,
+        max_parallel_chunks: int = 4,
     ) -> List[torch.Tensor]:
         """
         Fast batched generation with KV-cache + pre-allocation.
@@ -164,6 +165,13 @@ class Charter(nn.Module):
         # without guidance against 12 s/it with it, a ~240x collapse on the same song.
         # Halving how many chunks decode at once restores the original footprint.
         group = B if neg_emb is None else max(1, (B + 1) // 2)
+        # Halving only makes guidance no worse than no guidance; it does not bound
+        # anything, because half of a long song's chunks is still a lot of chunks. A
+        # four-minute song paged at 13.2 s/it where the same code on a two-minute clip
+        # ran at 0.1 s/it. Cap it so peak memory depends on this number rather than on
+        # how long the song happens to be.
+        if max_parallel_chunks > 0:
+            group = min(group, max_parallel_chunks)
 
         layers = self.transformer.n_layers
         total = full_seq_len * ((B + group - 1) // group)
