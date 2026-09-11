@@ -85,6 +85,24 @@ def main():
              "the audio steers the chart, at the cost of a second forward pass per step."
     )
     parser.add_argument(
+        "--pad-bias",
+        type=float,
+        default=0.0,
+        help="Added to the pad token's logit, which shifts note density. Does not give "
+             "a usable density control -- one unit collapses output ~22x -- but "
+             "temperature 1.0 with --top_k 128 --pad-bias 2 scored closer to human "
+             "chord, tap and sustain rates than the defaults on one clip."
+    )
+    parser.add_argument(
+        "--max-parallel-chunks",
+        type=int,
+        default=4,
+        help="How many 30s chunks to decode at once. Guidance doubles KV cache memory, "
+             "and a long song decoded all at once pages to host RAM instead of failing "
+             "(13.2 s/it against 0.1 s/it on a shorter clip). Lower this if generation "
+             "is unexpectedly slow; 0 means no cap."
+    )
+    parser.add_argument(
         "--no-sync",
         action="store_true",
         help="Keep the model's own note timing instead of moving the first note onto "
@@ -154,6 +172,8 @@ def main():
         top_k=args.top_k,
         allowed_ids=allowed_ids,
         guidance=args.guidance,
+        pad_bias=args.pad_bias,
+        max_parallel_chunks=args.max_parallel_chunks,
     )
     seqs = torch.cat(seqs).flatten().cpu().tolist()
 

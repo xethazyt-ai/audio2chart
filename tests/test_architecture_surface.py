@@ -13,7 +13,7 @@ FROZEN_HASHES = {
     "inference/engine.py": "7bd985aacc2df041f49555ec1810557354b62099",
     "inference/model_inference.py": "cd526cfbb27acd9921fb51a3c240f489bdad80c6",
     "inference/layers.py": "e44bfddff391fe20f482c7152eef11abd9dc88bd",
-    "generate.py": "6c9ddad867f19b7dd2a9073097a6d1716a3ed8fe",
+    "generate.py": "cefec8f9fe8fbeef10a050ab2251eee55e14cf42",
     "notebooks/audio2chart_charting.ipynb": "784fe5ffbbc2aa8efdbf20104ae09591e5ab6bf0",
 }
 
