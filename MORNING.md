@@ -115,11 +115,55 @@ enabled. Benchmarking fp32 / TF32 / bf16 now; that is where the time is.
 - Second effect of the `freeze_encoder` bug: `audio_encoder.eval()` was never called,
   so Encodec ran in *train* mode for the whole 24-hour run. It is deterministic now.
 
+## The throughput answer: we have been paging VRAM all along
+
+`train_num_pieces: 2` puts two 30-second windows in every batch. Measured:
+
+    seqs 1  freeze 8    0.315s/step   peak  5.905 GiB
+    seqs 2  freeze 8    6.194s/step   peak  9.476 GiB
+    seqs 2  freeze 0   10.424s/step   peak 11.040 GiB
+
+The card has 8 GiB. Two sequences need 9.5 GiB, and Windows' WDDM driver does not
+refuse -- it oversubscribes into host RAM, so instead of an out-of-memory error the
+step runs 19.7x slower. That is why every component measured fine in isolation: each
+one is fine, until the working set crosses 8 GiB and every access starts crossing
+PCIe.
+
+Gradient accumulation gives the same effective batch without the cliff:
+
+    now       pieces 2 x accum 4   ->  4 x 6.194s = 24.8s per optimizer step
+    proposed  pieces 1 x accum 8   ->  8 x 0.315s =  2.5s per optimizer step
+
+Same eight sequences per update, about 10x faster. An epoch goes from roughly 22
+hours to roughly 2.2.
+
+Two genuine throughput bugs fixed on the way, both cheap operations made expensive by
+how they touch the GPU, and neither visible in the source:
+
+- The audio encoder ran under bf16 autocast, where cuDNN has no fused LSTM kernel, so
+  SEANet's 2250-step recurrence fell back to an unfused path: 0.130s -> 0.712s. Worth
+  about 2.3s/batch in practice.
+- LogGradientNorm summed `.item()` per parameter, one GPU->CPU sync each, ~470 stalls
+  per optimizer step to log a single number: 1.09s, 2.5% of training time.
+
+Things I chased that turned out not to matter, so nobody repeats them: precomputing
+Encodec codes (1.6% of a step), the dataloader (0.034%), per-window chart
+re-processing (0.004s), and the optimizer (19ms -- the profiler's 8.57s
+`optimizer_step` double-counts the closure's forward and backward).
+
+The dead `_audio_cache` is still a real bug -- it is read but never written, so
+`max_cache_gb` and the whole chunk-eviction system control nothing. It is not a
+throughput problem, and switching it on would risk 6 GiB per worker across 4 workers,
+which is the host-RAM blowup from earlier in this project. It should be deleted, not
+activated.
+
 ## Decisions waiting for you
 
-- **The next training run's config.** With the encoder fixed we can likely drop
-  `freeze_layers` and/or raise batch size; the sweep says which. This is the run that
-  should actually improve conditioning, so it is worth choosing deliberately.
+- **The next training run's config.** The evidence now points at
+  `train_num_pieces: 1` with `accumulate_grad_batches: 8`, which keeps the effective
+  batch and stays under the 8 GiB cliff. Whether `freeze_layers` can also go to 0 at
+  one sequence is being measured; at two sequences it was a false economy, buying
+  decoder capacity and paying for it in paging.
 - **Audio dropout for real CFG.** Current guidance uses a wrong-song negative because
   the model has no null-audio concept. Training with ~10% audio dropout would give it
   one and make guidance considerably stronger. Cheap to add, needs a retrain.
