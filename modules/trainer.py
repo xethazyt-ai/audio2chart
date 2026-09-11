@@ -5,6 +5,7 @@ from torchmetrics import Accuracy
 from modules.scheduler import LinearWarmupCosineAnnealingLR
 from modules.models import TransformerDecoderOnly
 from hydra.utils import instantiate
+from omegaconf import OmegaConf
 
 
 ###############################
@@ -348,7 +349,14 @@ class WaveformTransformerDiscrete(L.LightningModule):
         self.vocab_size = vocab_size
         self.pad_token_id = pad_token_id
         self.eos_token_id = eos_token_id
-        
+        # Fraction of training input tokens replaced at random, to blunt exposure bias.
+        # Off by default: it changes what the model is trained on, so it is a decision
+        # for a run rather than something to inherit silently.
+        self.input_noise = float(OmegaConf.select(cfg_model, "input_noise", default=0.0))
+        # Note tokens occupy [0, n_note_tokens); bos/eos/pad sit above them and must
+        # never be drawn as noise -- an injected eos would teach the model to stop.
+        self.n_note_tokens = min(pad_token_id, eos_token_id)
+
         self.audio_encoder = instantiate(
             cfg_model.encoder,
             vocab_size=None,
@@ -417,6 +425,36 @@ class WaveformTransformerDiscrete(L.LightningModule):
             batch.get("cond_diff"),
         )
 
+    def _corrupt_inputs(self, input_tokens):
+        """Randomly replace input tokens, so the model learns to recover from error.
+
+        Teacher forcing only ever shows the model a correct history, and free running
+        it then drifts: measured over one 30s chunk, the generated tap rate climbs
+        0.224 -> 0.454 -> 0.671 -> 0.723 as it conditions on more of its own output,
+        and at a lower sampling temperature it collapses instead to a flat zero taps
+        and zero sustains. The model is not miscalibrated -- teacher-forced it puts
+        0.181 of its mass on taps against a true 0.197 -- it has simply never seen a
+        wrong history and has no idea how to continue from one.
+
+        Scheduled sampling is the usual answer and costs a second forward pass per
+        step. Corrupting a small fraction of inputs approximates it for free: the
+        model sees histories containing mistakes and learns not to compound them.
+
+        Targets are untouched, so the model is still asked for the right answer -- the
+        point is to make it right despite a damaged history, not to teach it the
+        damage. Padding is left alone as well; corrupting it would teach the model to
+        emit notes where a chart has ended.
+        """
+        if not self.input_noise or not self.training:
+            return input_tokens
+        keep = input_tokens != self.pad_token_id
+        draw = torch.rand_like(input_tokens, dtype=torch.float) < self.input_noise
+        corrupt = keep & draw
+        if not corrupt.any():
+            return input_tokens
+        noise = torch.randint_like(input_tokens, 0, self.n_note_tokens)
+        return torch.where(corrupt, noise, input_tokens)
+
     @staticmethod
     def _flatten_encodec_frames(audio_codes):
         """Convert [frames, batch, quantizers, time] to [batch, quantizers, time]."""
@@ -445,6 +483,9 @@ class WaveformTransformerDiscrete(L.LightningModule):
     def _step(self, batch, batch_idx, split):
 
         audio, padding_mask, input_tokens, target_tokens, class_ids = self._extract_batch(batch)
+
+        if split == "train":
+            input_tokens = self._corrupt_inputs(input_tokens)
 
         if not torch.isfinite(audio).all():
             raise ValueError("Audio batch contains non-finite values")
