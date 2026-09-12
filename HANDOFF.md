@@ -221,6 +221,68 @@ conclusion here should be repeated until it does.
 
 ---
 
+## Why it never stops: pad is down-weighted 10x in the loss
+
+Measured directly, not inferred. Feeding the model a history and reading P(pad) off one
+forward pass, no sampling involved:
+
+| history | P(pad) raw | after temperature 0.5 |
+|---|---|---|
+| just bos | 0.580 | **0.904** |
+| 1 note | 0.599 | 0.901 |
+| **2 notes** | **0.132** | **0.092** |
+| 4 notes | 0.027 | 0.004 |
+| 8 notes | 0.009 | 0.0002 |
+| 32 pads | 0.807 | 0.998 |
+| **32 alternating note/pad** | **0.002** | **0.0000** |
+
+**Two consecutive notes collapse P(pad) tenfold and it never recovers.** An *alternating*
+note/pad history -- an ordinary sparse chart -- drives pad to zero outright. The all-pad
+state is the only one in which this model will stay silent.
+
+So generation starts 90% likely to be quiet, one unlucky pair of notes locks it into
+permanent saturation, and it plays without pause for the rest of the song. That is the
+whole story of the 71 nps and the zero rests, and it is why `--pad-bias` cannot rescue
+it: countering a 0.90 -> 0.0002 collapse needs about 8 logits, and the bias applies
+uniformly, so by +3 it has annihilated output everywhere else (the sweep in
+engine.py `_make_sampler` shows 0.66 nps at pad+3).
+
+### The cause is in `modules/trainer.py:430`
+
+```python
+self.class_weights = torch.ones(self.vocab_size)
+self.class_weights[self.pad_token_id] = 0.1
+```
+
+Pad is 86% of all targets and is weighted 0.1. Its share of the loss is therefore
+0.86 x 0.1 = 0.086 against 0.14 x 1.0 = 0.14 for real notes: **notes dominate the
+objective roughly 62/38 while being 14% of the data.** The model is optimised for *which
+note* and barely at all for *note or silence*.
+
+That predicts exactly the two things measured. Pattern vocabulary is above human -- lift
++0.58 against +0.42, coverage up to 0.96 -- and density is 3.4x human with no rests at
+all. The model is good at what the loss emphasises and bad at what it discounts.
+
+The down-weighting was presumably there to stop a collapse to all-pad, since predicting
+pad everywhere scores 86% accuracy. That is a real hazard and the reason to keep *some*
+down-weighting. 0.1 has simply overshot into the opposite failure.
+
+### What to try next, in order
+
+1. **Raise the pad weight** to somewhere around 0.3-0.5 and retrain. This is the cheapest
+   test of the whole diagnosis and it changes one number.
+2. Watch `val/pad_pred_rate` against the data's ~0.86 as the primary signal; it sat at
+   0.79 teacher-forced this run, which looked fine and hid the generation collapse.
+3. Re-run the P(pad)-versus-history table above. It takes one forward pass per row and is
+   far more diagnostic than any chart metric -- if two notes still collapse pad, nothing
+   downstream will be right.
+
+Do not tune `--pad-bias` to compensate. It treats a training fault at inference, it is
+not orthogonal (suppressing notes suppresses chords and taps preferentially), and the
+engine docstring already records that it does not land anywhere near a human density.
+
+---
+
 ## Two tools were silently broken
 
 **`fit_tier.py` had never run.** `main()` read `args.min_tier`; `parse_args` never declared
