@@ -21,6 +21,21 @@ Read the alternating row first. It is what an ordinary sparse chart's history lo
 and if P(pad) is near zero there the model cannot produce one, whatever the sampler does.
 No chart metric tells you that as directly, and generating six charts to find out costs
 forty minutes instead of thirty seconds.
+
+The `in data` column is the corpus answer to the same question, measured over 400 tapping
+charts and 8.9 million grid slots. Against it the 2026-09-11 runs are not slightly
+miscalibrated, they are inverted:
+
+    history                  data     model
+    2 consecutive notes     0.7510   0.0915
+    4 consecutive notes     0.4076   0.0036
+    32 consecutive notes    0.0078   0.0041
+    alternating note/pad    0.9261   0.0000
+
+Note the 32-note row, where model and data agree. The model has collapsed the whole
+conditional distribution onto its dense-run mode: after two notes it answers as though it
+had seen thirty-two. That is the shape of the fault, and a fix has to move the short
+histories without disturbing the long one.
 """
 
 from __future__ import annotations
@@ -37,6 +52,16 @@ sys.path.insert(0, str(ROOT))
 from inference.engine import Charter
 
 LENGTHS = (0, 1, 2, 4, 8, 16, 32)
+
+# What the corpus itself says, measured over 400 tapping charts and 8.9M grid slots at
+# grid_ms 10 -- the same binning the model is trained on. Overall P(pad) is 0.834.
+#
+# Printed beside the model's numbers because without it the table invites guesswork. The
+# 2026-09-11 runs looked merely "low" until this column existed; against it they are
+# giving the opposite answer, most starkly on the alternating row where the data says
+# silence is 93% likely and the model says 0%.
+DATA_AFTER_NOTES = {1: 0.9645, 2: 0.7510, 4: 0.4076, 8: 0.1728, 16: 0.0888, 32: 0.0078}
+DATA_ALTERNATING = 0.9261
 
 
 def parse_args() -> argparse.Namespace:
@@ -84,11 +109,15 @@ def main() -> None:
         return raw, hot
 
     print(f"{args.model}\n")
-    print(f"{'history':<30}{'P(pad)':>10}{f'  at t={args.temperature}':>12}")
+    print(f"{'history':<30}{'P(pad)':>10}{f'  at t={args.temperature}':>12}"
+          f"{'in data':>10}")
 
     for count in LENGTHS:
         raw, hot = probability([args.note] * count)
-        print(f"  {f'{count} notes' if count else 'just bos':<28}{raw:>10.4f}{hot:>12.4f}")
+        reference = DATA_AFTER_NOTES.get(count)
+        shown = f"{reference:>10.4f}" if reference is not None else " " * 10
+        print(f"  {f'{count} notes' if count else 'just bos':<28}"
+              f"{raw:>10.4f}{hot:>12.4f}{shown}")
 
     print()
     for count in LENGTHS[1:]:
@@ -99,7 +128,8 @@ def main() -> None:
     for count in (4, 16, 32):
         history = [args.note if index % 2 == 0 else pad_id for index in range(count)]
         raw, hot = probability(history)
-        print(f"  {f'{count} alternating':<28}{raw:>10.4f}{hot:>12.4f}")
+        print(f"  {f'{count} alternating':<28}{raw:>10.4f}{hot:>12.4f}"
+              f"{DATA_ALTERNATING:>10.4f}")
 
     _, alternating = probability(
         [args.note if index % 2 == 0 else pad_id for index in range(32)])
