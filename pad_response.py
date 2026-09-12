@@ -7,10 +7,10 @@ Feed the model a history and read P(pad) straight off the logits. A healthy mode
 keep a meaningful probability of silence whatever it has just played; both runs of
 2026-09-11 did not:
 
-    history                  P(pad) after t=0.5
-    just bos                       0.904
-    2 notes                        0.092
-    32 alternating note/pad        0.0000
+    history                  model    corpus
+    just bos                 0.904       --
+    2 notes                  0.092    0.751
+    4 alternating            0.003    0.398
 
 Two consecutive notes collapsed silence tenfold and it never recovered, so generation
 saturated and the charts never rested -- 0.35-0.85 rests a minute against a human 15.1.
@@ -30,7 +30,7 @@ miscalibrated, they are inverted:
     2 consecutive notes     0.7510   0.0915
     4 consecutive notes     0.4076   0.0036
     32 consecutive notes    0.0078   0.0041
-    alternating note/pad    0.9261   0.0000
+    4 alternating           0.3981   0.0032
 
 Note the 32-note row, where model and data agree. The model has collapsed the whole
 conditional distribution onto its dense-run mode: after two notes it answers as though it
@@ -61,7 +61,18 @@ LENGTHS = (0, 1, 2, 4, 8, 16, 32)
 # giving the opposite answer, most starkly on the alternating row where the data says
 # silence is 93% likely and the model says 0%.
 DATA_AFTER_NOTES = {1: 0.9645, 2: 0.7510, 4: 0.4076, 8: 0.1728, 16: 0.0888, 32: 0.0078}
-DATA_ALTERNATING = 0.9261
+
+# Alternating references, measured at the SAME length the probe uses. A single figure
+# will not do: P(pad) after strict alternation falls steeply with how long the
+# alternation has run, because a long regular passage is a dense one.
+#
+# CORRECTION. This was one number, 0.9261, printed beside every alternating row. It was
+# measured on a six-slot lookback whose last slot was a NOTE, while the probe builds
+# histories whose last slot is a PAD. Those are opposite questions -- "does the
+# alternation continue" (yes, 93% of the time) against "does this gap extend" (5-40%) --
+# and the mismatch made every model tested look roughly a hundred times worse on these
+# rows than it is.
+DATA_ALTERNATING = {4: 0.3981, 8: 0.1986, 16: 0.1103, 32: 0.0499}
 
 
 def parse_args() -> argparse.Namespace:
@@ -125,24 +136,30 @@ def main() -> None:
         print(f"  {f'{count} pads':<28}{raw:>10.4f}{hot:>12.4f}")
 
     print()
-    for count in (4, 16, 32):
+    alternating_values = {}
+    for count in sorted(DATA_ALTERNATING):
         history = [args.note if index % 2 == 0 else pad_id for index in range(count)]
         raw, hot = probability(history)
+        alternating_values[count] = hot
         print(f"  {f'{count} alternating':<28}{raw:>10.4f}{hot:>12.4f}"
-              f"{DATA_ALTERNATING:>10.4f}")
+              f"{DATA_ALTERNATING[count]:>10.4f}")
 
-    _, alternating = probability(
-        [args.note if index % 2 == 0 else pad_id for index in range(32)])
+    # Judge against the corpus, as a ratio, rather than against a fixed threshold: the
+    # right answer differs by an order of magnitude between these rows.
     _, two_notes = probability([args.note] * 2)
+    short = alternating_values[4] / DATA_ALTERNATING[4]
+    long_run = alternating_values[32] / DATA_ALTERNATING[32]
     print()
-    if alternating < 0.01:
-        print("  FAIL: after an ordinary sparse history the model puts essentially no")
-        print("        probability on silence. It cannot produce a chart that rests.")
-    elif two_notes < 0.3:
-        print("  WEAK: two notes already suppress silence heavily; expect over-dense")
-        print("        output even if it is no longer absolute.")
+    print(f"  alternating-4 is {short:.2f}x the corpus, alternating-32 is {long_run:.2f}x,"
+          f" P(pad) after two notes {two_notes / DATA_AFTER_NOTES[2]:.2f}x")
+    if short < 0.1 or two_notes < 0.1 * DATA_AFTER_NOTES[2]:
+        print("  FAIL: silence is an order of magnitude less likely than the corpus says.")
+        print("        Expect saturated output that never rests.")
+    elif short < 0.5 or long_run < 0.5:
+        print("  WEAK: silence is suppressed but not absent. Expect over-dense output,")
+        print("        worse the longer the model has been playing.")
     else:
-        print("  OK: silence survives a note history. Density should be controllable.")
+        print("  OK: silence tracks the corpus. Density should be controllable.")
 
 
 if __name__ == "__main__":
