@@ -259,12 +259,25 @@ The second step (+0.131) is population. Note the sample here is the whole corpus
 contains overcharts, so it is not the same definition as the original 60 "general"
 charts; it is the right reference for a model trained on everything."""
 
-TAPPING_LIFT_MEAN = 0.399
+TAPPING_LIFT_MEAN = 0.416
 TAPPING_LIFT_SD = 0.127
-"""The same, over the 1454-song tapping training split.
+"""Catalogue lift over 330 human charts from the tapping split, train and val pooled.
 
-Tapping charts carry far more catalogue vocabulary -- coverage 0.656 against 0.489 -- and
-vary less doing it. Judging a tapping-trained model against HUMAN_LIFT_MEAN would call a
-chart at +0.30 lift half a standard deviation *above* human when it is in fact three
-quarters of one below. That is a reversed verdict, not a small error, so use these
-whenever the model was trained on the tapping subset."""
+Tapping charts carry far more catalogue vocabulary than the corpus at large --
+coverage around 0.68 against 0.489 -- and vary less doing it. Judging a
+tapping-trained model against HUMAN_LIFT_MEAN would call a chart at +0.30 lift a
+quarter of a standard deviation above human when it is nearly a full one below. That
+is a reversed verdict, so use these whenever the model was trained on the tapping
+subset.
+
+Pooled deliberately. Measured separately, the two halves of the split disagree:
+
+    train, 180 charts   +0.399  sd 0.127
+    val,   150 charts   +0.436  sd 0.124
+
+a gap of 0.037, about 2.7 sigma on those sample sizes. The split groups by song
+rather than by pack, so both halves draw from one pool and this reads as sampling
+rather than a real population difference -- but it is large enough that taking either
+half alone would move a generated chart score by 0.3 sd. score_run draws its clips
+from the val half, which is precisely the half that would have biased the comparison
+had the train figure been used on its own."""
