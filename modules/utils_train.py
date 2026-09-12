@@ -58,7 +58,12 @@ class LogGradientNorm(L.pytorch.callbacks.Callback):
 # What the corpus says P(pad) should be after k consecutive notes, measured over 400
 # tapping charts and 8.9M grid slots at grid_ms 10. See pad_response.py.
 DATA_PAD_AFTER = {1: 0.9645, 2: 0.7510, 4: 0.4076, 8: 0.1728}
-DATA_PAD_ALTERNATING = 0.9261
+# Keyed by how long the alternation has run, because P(pad) falls steeply with it --
+# a long regular passage is a dense one. A single figure was used here at first, and
+# it was measured on histories ending in a NOTE while the probe ends on a PAD, which
+# asks the opposite question and overstated the gap roughly tenfold.
+DATA_PAD_ALTERNATING = {4: 0.3981, 8: 0.1986, 16: 0.1103, 32: 0.0499}
+ALTERNATING_LENGTH = 16
 
 
 class WatchPadCollapse(L.pytorch.callbacks.Callback):
@@ -129,10 +134,14 @@ class WatchPadCollapse(L.pytorch.callbacks.Callback):
                     module.log(f"diag/pad_after_{count}_gap", reference - value)
 
             alternating = [self.NOTE_TOKEN if index % 2 == 0 else module.pad_token_id
-                           for index in range(16)]
+                           for index in range(ALTERNATING_LENGTH)]
             value = pad_probability(alternating)
             module.log("diag/pad_alternating", value)
-            module.log("diag/pad_alternating_gap", DATA_PAD_ALTERNATING - value)
+            reference = DATA_PAD_ALTERNATING[ALTERNATING_LENGTH]
+            module.log("diag/pad_alternating_gap", reference - value)
+            # A ratio is the readable number: the corpus value differs by an order
+            # of magnitude across lengths, so a raw gap means little on its own.
+            module.log("diag/pad_alternating_ratio", value / reference)
 
 
 def _validate_policy(error_policy: str) -> None:
