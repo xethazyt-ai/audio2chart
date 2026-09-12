@@ -56,6 +56,33 @@ class TappingBaselineTest(unittest.TestCase):
         self.assertGreater(TAPPING_RESTS_PER_MINUTE, 0.0)
         self.assertGreater(TAPPING_REST_SECONDS, 0.0)
 
+    def test_pattern_lift_has_a_tapping_baseline_too(self):
+        """The lift figure was stale twice over: wrong catalogue and wrong population.
+
+        HUMAN_LIFT_MEAN was 0.209, measured over 60 charts against a 123-entry
+        catalogue. The catalogue is now 100 entries, which alone moved the general
+        figure to 0.268, and the tapping population sits at 0.399. Against the old
+        number a chart at +0.30 read as half a standard deviation above human; against
+        the tapping one it is three quarters of one below -- a reversed verdict.
+        """
+        from chart.discover import (HUMAN_LIFT_MEAN, HUMAN_LIFT_SD,
+                                    TAPPING_LIFT_MEAN, TAPPING_LIFT_SD)
+
+        for mean, sd in ((HUMAN_LIFT_MEAN, HUMAN_LIFT_SD),
+                         (TAPPING_LIFT_MEAN, TAPPING_LIFT_SD)):
+            self.assertGreater(mean, 0.0, "lift over a chance floor must be positive")
+            self.assertLess(mean, 1.0)
+            self.assertGreater(sd, 0.0)
+
+        self.assertGreater(TAPPING_LIFT_MEAN, HUMAN_LIFT_MEAN,
+                           "tapping charts carry more catalogue vocabulary, not less")
+
+        # A chart at the tapping mean must not read as unusual for a tapping model.
+        sigmas = (TAPPING_LIFT_MEAN - TAPPING_LIFT_MEAN) / TAPPING_LIFT_SD
+        self.assertEqual(0.0, sigmas)
+        # ...but it is clearly above average against the general population.
+        self.assertGreater((TAPPING_LIFT_MEAN - HUMAN_LIFT_MEAN) / HUMAN_LIFT_SD, 0.5)
+
     def test_evaluate_chart_offers_both_and_score_run_defaults_to_tapping(self):
         """The default matters: score_run judges tapping-trained checkpoints."""
         import argparse

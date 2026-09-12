@@ -43,7 +43,8 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
 from chart.chart_processor import ChartProcessor
-from chart.discover import HUMAN_LIFT_MEAN, HUMAN_LIFT_SD, catalogue_lift
+from chart.discover import (HUMAN_LIFT_MEAN, HUMAN_LIFT_SD, TAPPING_LIFT_MEAN,
+                           TAPPING_LIFT_SD, catalogue_lift)
 from chart.metrics import (BASELINES, TAPPING_REST_SECONDS,
                           TAPPING_RESTS_PER_MINUTE, profile_from_timed)
 from chart.patterns import single_note_runs
@@ -160,8 +161,10 @@ def main():
     runs = [[fret for _, fret in run] for run in single_note_runs(timed, tokenizer)]
     coverage, floor = catalogue_lift(runs)
     lift = coverage - floor
-    sigmas = (lift - HUMAN_LIFT_MEAN) / HUMAN_LIFT_SD if HUMAN_LIFT_SD else 0.0
-    print(f"\n  pattern lift    {lift:>+10.3f}{HUMAN_LIFT_MEAN:>+10.3f}"
+    lift_mean = TAPPING_LIFT_MEAN if args.baseline == "tapping" else HUMAN_LIFT_MEAN
+    lift_sd = TAPPING_LIFT_SD if args.baseline == "tapping" else HUMAN_LIFT_SD
+    sigmas = (lift - lift_mean) / lift_sd if lift_sd else 0.0
+    print(f"\n  pattern lift    {lift:>+10.3f}{lift_mean:>+10.3f}"
           f"{sigmas:>+9.1f}sd")
     print(f"    coverage {coverage:.3f} against a chance floor of {floor:.3f}")
 

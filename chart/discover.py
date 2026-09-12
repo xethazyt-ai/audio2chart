@@ -240,6 +240,31 @@ def catalogue_lift(runs: list[list[int]], shuffles: int = 3,
     return real, statistics.mean(floors) if floors else 0.0
 
 
-HUMAN_LIFT_MEAN = 0.209
-HUMAN_LIFT_SD = 0.167
-"""Catalogue lift over 60 human Expert charts, for scoring a generated one."""
+HUMAN_LIFT_MEAN = 0.268
+HUMAN_LIFT_SD = 0.170
+"""Catalogue lift over 180 human Expert charts sampled from the whole corpus.
+
+Was 0.209 / 0.167 over 60 charts. Two things moved it, and they were measured apart:
+
+  stored, 60 charts, catalogue of 123 entries      +0.209  sd 0.167
+  whole corpus, 180 charts, catalogue of 100       +0.268  sd 0.170
+  tapping split, 180 charts, catalogue of 100      +0.399  sd 0.127
+
+The first step (+0.059) is the catalogue rework alone -- castles cut to green, twenty
+anchors demoted to UNCONFIRMED_SHAPES, cakes corrected, the skip family added. A lift
+baseline is only meaningful against the catalogue it was measured with, so changing the
+catalogue silently invalidated this number and nothing flagged it.
+
+The second step (+0.131) is population. Note the sample here is the whole corpus, which
+contains overcharts, so it is not the same definition as the original 60 "general"
+charts; it is the right reference for a model trained on everything."""
+
+TAPPING_LIFT_MEAN = 0.399
+TAPPING_LIFT_SD = 0.127
+"""The same, over the 1454-song tapping training split.
+
+Tapping charts carry far more catalogue vocabulary -- coverage 0.656 against 0.489 -- and
+vary less doing it. Judging a tapping-trained model against HUMAN_LIFT_MEAN would call a
+chart at +0.30 lift half a standard deviation *above* human when it is in fact three
+quarters of one below. That is a reversed verdict, not a small error, so use these
+whenever the model was trained on the tapping subset."""
