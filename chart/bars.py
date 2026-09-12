@@ -1,8 +1,21 @@
-"""Musical bars, for segmenting a chart the way a charter reads it.
+"""Musical time on the highway, for segmenting a chart the way a charter reads it.
 
-Robert: charters think in beats and bars, bars especially for dense patterns, and patterns
-should be looked for bar by bar. The reference's own grid-step rule says the same thing --
-"a pattern's rhythmic subdivision must strictly dictate its note count per bar".
+Robert's names for the white lines, which this module now follows exactly:
+
+  measure line (bar line)  the thickest, brightest line. Start of a measure, the downbeat.
+  beat line                thinner, evenly spaced between measure lines. Beats 2, 3, 4 in 4/4.
+  half-beat line           fainter still, marking subdivisions -- eighths, sixteenths.
+
+**Patterns are usually one to two BEAT lines long, not one to two measures.** That
+correction matters more than it sounds: a 4/4 measure is four beats, so segmenting
+patterns by measure groups roughly four times too much material and will happily merge
+several distinct figures into one "unit". `group_by_beat` is the right segmentation for
+pattern work; `group_by_bar` is the right one for drawing the highway, which is what
+view_chart.py wants.
+
+The reference's own grid-step rule -- "a pattern's rhythmic subdivision must strictly
+dictate its note count per bar" -- reads naturally at either scale and so did not settle
+it.
 
 That matters because the alternative is a heuristic. `chart.patterns.single_note_runs`
 splits on chords and on a fixed 250 ms gap, which has no musical meaning: it can join two
@@ -71,10 +84,42 @@ def bar_boundaries(chart_path: str | Path, resolution: int, last_tick: int) -> l
     return boundaries
 
 
-def group_by_bar(encoded, boundaries: list[int]) -> list[list]:
-    """Split `tokenizer.encode(...)` output into one list per bar.
+def beat_length_ticks(denominator: int, resolution: int) -> int:
+    """Ticks in one beat. `resolution` is ticks per quarter note.
 
-    Bars with no notes are kept as empty lists so an index is a bar number.
+    The time signature's denominator says what note value gets the beat: 4 means a
+    quarter (one resolution), 8 means an eighth (half of one). The numerator says how
+    many of them fill a measure and is irrelevant here.
+    """
+    return int(resolution * 4 / denominator)
+
+
+def beat_boundaries(chart_path: str | Path, resolution: int, last_tick: int) -> list[int]:
+    """Tick of every beat line from 0 through `last_tick`, measure lines included.
+
+    This is the segmentation to use for pattern work. Patterns run one to two beats, so
+    measure-level grouping is about four times too coarse and merges separate figures.
+    """
+    events = parse_time_signatures(chart_path)
+    boundaries: list[int] = []
+    for index, (tick, _numerator, denominator) in enumerate(events):
+        end = events[index + 1][0] if index + 1 < len(events) else last_tick + 1
+        length = beat_length_ticks(denominator, resolution)
+        if length <= 0:
+            continue
+        position = tick
+        while position <= min(end - 1, last_tick):
+            boundaries.append(position)
+            position += length
+    return boundaries
+
+
+def group_by_bar(encoded, boundaries: list[int]) -> list[list]:
+    """Split `tokenizer.encode(...)` output into one list per boundary interval.
+
+    Named for bars but agnostic to what the boundaries are: hand it `beat_boundaries`
+    and it groups by beat. Empty intervals are kept as empty lists so an index is an
+    interval number.
     """
     if not boundaries:
         return [list(encoded)]
@@ -96,6 +141,14 @@ def bars_for_chart(chart_path: str | Path, encoded, resolution: int) -> list[lis
         return []
     last_tick = max(event[0] for event in encoded)
     return group_by_bar(encoded, bar_boundaries(chart_path, resolution, last_tick))
+
+
+def beats_for_chart(chart_path: str | Path, encoded, resolution: int) -> list[list]:
+    """One list per beat. The unit patterns actually live in."""
+    if not encoded:
+        return []
+    last_tick = max(event[0] for event in encoded)
+    return group_by_bar(encoded, beat_boundaries(chart_path, resolution, last_tick))
 
 
 MAX_PERIOD = 6

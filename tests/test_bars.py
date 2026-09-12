@@ -3,7 +3,8 @@ import unittest
 from pathlib import Path
 
 from chart.bars import (
-    bar_boundaries, bar_length_ticks, bars_for_chart, group_by_bar, parse_time_signatures,
+    bar_boundaries, bar_length_ticks, bars_for_chart, beat_boundaries,
+    beat_length_ticks, beats_for_chart, group_by_bar, parse_time_signatures,
     soft_bar_cuts,
 )
 
@@ -118,3 +119,52 @@ class SoftCutTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BeatSegmentationTest(unittest.TestCase):
+    """Patterns run one to two beat lines, not one to two measures.
+
+    Robert, on the white lines: the thick bright one is the measure line, the thinner
+    evenly spaced ones between are beat lines, and "most patterns are USUALLY 1-2 beat
+    lines in length". Segmenting those by measure groups four times too much at 4/4 and
+    merges separate figures into one unit.
+    """
+
+    def test_a_beat_is_a_quarter_of_a_four_four_measure(self):
+        self.assertEqual(192, beat_length_ticks(4, 192))
+        self.assertEqual(768, bar_length_ticks(4, 4, 192))
+        self.assertEqual(4 * beat_length_ticks(4, 192), bar_length_ticks(4, 4, 192))
+
+    def test_the_denominator_sets_the_beat_not_the_numerator(self):
+        """6/8 counts eighths, so its beat is half a quarter note."""
+        self.assertEqual(96, beat_length_ticks(8, 192))
+        self.assertEqual(192, beat_length_ticks(4, 192))
+
+    def test_beat_lines_include_every_measure_line(self):
+        import tempfile
+        from pathlib import Path as _Path
+
+        text = (
+            '[Song]\n{\n  Resolution = 192\n  Offset = "0"\n}\n'
+            '[SyncTrack]\n{\n  0 = TS 4\n  0 = B 120000\n}\n'
+            '[ExpertSingle]\n{\n  0 = N 0 0\n}\n')
+        folder = _Path(tempfile.mkdtemp())
+        path = folder / 'notes.chart'
+        path.write_text(text, encoding='utf-8')
+
+        beats = set(beat_boundaries(path, resolution=192, last_tick=3000))
+        measures = set(bar_boundaries(path, resolution=192, last_tick=3000))
+        self.assertTrue(measures <= beats, 'every measure line is also a beat line')
+        self.assertGreater(len(beats), len(measures))
+
+    def test_grouping_by_beat_splits_what_a_measure_would_merge(self):
+        # Two separate figures, one per beat, inside a single 4/4 measure.
+        encoded = [(0, 1, 0, {}), (48, 2, 0, {}),          # beat 0
+                   (192, 3, 0, {}), (240, 4, 0, {})]       # beat 1
+        by_measure = group_by_bar(encoded, [0, 768])
+        by_beat = group_by_bar(encoded, [0, 192, 384, 576])
+        self.assertEqual(1, sum(1 for group in by_measure if group),
+                         "a measure swallows both figures")
+        self.assertEqual(2, sum(1 for group in by_beat if group),
+                         "beats keep them apart")
+
