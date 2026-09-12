@@ -125,24 +125,29 @@ The falsifiable question for scoring: the model learned note spacing in position
 fine-tuning. If it did not, note density comes out around double and the inter-onset
 histogram clusters at half the right intervals.
 
-**1500 steps is more than this subset supports.** Run A's non-pad accuracy:
+**RETRACTED: Run A is not overfitting.** An earlier version of this section said it
+was, from three validation points after a peak. The next point made a new high and the
+claim did not survive:
 
-| step | train | val |
-|---|---|---|
-| 542 | 0.634 | 0.648 |
-| ~700 | 0.660 | **0.660** |
-| ~890 | 0.667 | 0.650 |
-| ~1070 | 0.672 | 0.639 |
+| step | val | train | gap |
+|---|---|---|---|
+| 692 | 0.660 | 0.660 | +0.000 |
+| 873 | 0.650 | 0.668 | +0.018 |
+| 1054 | 0.639 | 0.672 | +0.033 |
+| **1235** | **0.666** | 0.672 | **+0.006** |
 
-Train keeps climbing while val peaked around step 692 and fell twice after; the gap went
-0.000 → 0.033. That is overfitting onset on 1447 songs, not a plateau. EarlyStopping
-(patience 5 on val/acc_nonpad_epoch) would catch it, but max_steps arrives at about the
-same time.
+The train/val gap widened to +0.033 and then collapsed back to +0.006 as validation hit a
+new high. That is a noisy metric, not divergence.
 
-Score `best-checkpoint.ckpt`, never `last.ckpt` — the monitored checkpoint holds the val
-peak and the final weights are past it. A shorter run or a lower learning rate is the
-next thing to try; Run B was left on the identical config so the A/B comparison stays
-valid.
+The noise has a cause worth fixing: `limit_val_batches=100` with `val_batch_size=1` and
+`val_num_pieces=1` computes the monitored metric over **100 windows**. A swing of ±0.013
+around 0.653 is what that sample size produces, and the monitored checkpoint is selected
+on it — so which weights get saved as "best" is partly luck. Raising `limit_val_batches`,
+or `val_num_pieces`, would cost little (validation is a small share of the run now that
+checkpoints are on a fast drive) and would make checkpoint selection mean something.
+
+Score `best-checkpoint.ckpt` rather than `last.ckpt` regardless: it is monitored on
+val/acc_nonpad_epoch, so it tracks the peak wherever the peak lands.
 
 ---
 
