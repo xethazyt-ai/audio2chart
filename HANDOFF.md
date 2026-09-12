@@ -221,6 +221,42 @@ conclusion here should be repeated until it does.
 
 ---
 
+## Scored results, six charts each
+
+Both runs finished 1500 steps. Scored against the tapping baseline.
+
+| | Run A (from b6000) | Run B (from released) | human |
+|---|---|---|---|
+| val non-pad peak | **0.6657** | 0.6514 | — |
+| nps, median of 6 | 59.97 | 75.72 | **21.01** |
+| rests/min, median | 0.85 | 0.35 | **15.10** |
+| pattern lift, median | +0.61 | +0.65 | +0.42 |
+| pct_tap, median | 1.00 | 1.00 | 0.96 |
+| audio ablation, note positions | **+0.8%**, hurt 14/20 | +0.3%, hurt 11/20 | — |
+
+**Run A is the better model on every axis that matters.** Higher validation accuracy,
+density closer to human (60 against 76), and it is the only one of the two that
+demonstrably uses the audio at all: swapping a batch's audio for a neighbour's costs it
+0.8% on note positions and hurts 14 of 20 batches, against 0.3% and 11 of 20 for Run B.
+Eleven of twenty is chance. So initialising from b6000 was worth doing, which is the
+question the A/B was set up to answer.
+
+**Both share the fatal fault, and it generalises.** Across all twelve charts, density runs
+1.8x to 4.2x human and rests never exceed 1.8 a minute against a human 15.1. The
+one-song probe was not a fluke.
+
+**Pattern lift above human is not the good news it looks like.** Both runs exceed the
+human median (+0.42), and Run B's range of +0.62 to +0.71 sits above the highest of the
+twelve human charts measured (+0.614). Combined with saturated density that reads as
+over-regularity -- the model spamming catalogue shapes continuously -- rather than
+musicality. Catalogue coverage is worth having, but a chart that is *more* patterned than
+any human one is not obviously closer to a human chart.
+
+The single Run B chart at 22.54 nps is worth noting: one chart in twelve landed at human
+density, so the model is not incapable of it, just overwhelmingly unlikely to get there.
+
+---
+
 ## Why it never stops: pad is down-weighted 10x in the loss
 
 Measured directly, not inferred. Feeding the model a history and reading P(pad) off one
