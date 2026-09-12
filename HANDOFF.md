@@ -366,6 +366,59 @@ around 24 — and that is the label source this needs.
 
 ---
 
+## What Moonscraper told us (2026-09-12)
+
+Robert suggested reading the installed editor at
+`C:\Program Files (x86)\Moonscraper Chart Editor`. It ships as a compiled Unity app --
+the logic is in `Assembly-CSharp.dll`, not source -- but its config and changelog are
+plain text and answered one real question.
+
+**`song.ini` has a `delay` field, and nothing here reads it.**
+`Config/clone_hero_ini_tags.txt` lists `delay = 0` alongside `diff_guitar`. It is a
+second timing offset, independent of the `.chart` `[Song] Offset` that the pipeline does
+read. Measured across the 1454-song tapping training split:
+
+| | songs |
+|---|---|
+| both non-zero and agreeing | 72 |
+| both non-zero, **disagreeing** by >2 ms | 8 |
+| Offset only (handled correctly) | 128 |
+| **`delay` only — silently misaligned** | **4** |
+| neither | 1242 |
+
+So `delay` is usually the same quantity in milliseconds -- Requiem dies irae is
+`Offset 5.000` and `delay 5000`, Everlong `-2.230` and `-2230` -- but not always. Twelve
+songs (0.8%) are either misaligned or ambiguous. The disagreements are strange rather
+than small: `Prevail` carries `Offset +0.870` against `delay +0.001`.
+
+Not fixed. Reading it means threading a song.ini lookup through ChartProcessor, which
+currently works from chart text alone and has no path when handed text directly, so every
+call site changes. That is a poor trade for 0.3% of the corpus while the model is
+emitting three times too many notes. Worth doing once the density fault is closed.
+
+Supporting evidence for which field is canonical: the changelog records *"Moved Offset
+property option from general Settings to be under Advanced->Legacy Options"*. Moonscraper
+treats `.chart` Offset as legacy, which is consistent with `delay` being the modern path
+and with both being written for compatibility. It does not by itself say which Clone Hero
+honours at playback -- the empirical onset-alignment test does, and it says Offset as
+written is correct for the songs that carry it.
+
+**What it could not usefully tell us.** The obvious next targets -- the HOPO threshold
+that the `forced` flag inverts, and sustain cutoff rules -- turn out not to matter for
+this corpus. Tapping charts barely use either: human `pct_forced` is 0.0009 and
+`pct_sustain` 0.0067, and the generated charts sit at 0.000 for both. Chasing the exact
+HOPO tick threshold would have been precision applied to a feature that is absent from
+the data we train on.
+
+One representational note for later, if the project moves beyond tapping. The `.chart`
+`forced` flag does not record "this is a HOPO" -- it *inverts* whatever the note would
+naturally be, and natural HOPO depends on the tick gap to the previous note. So the same
+musical intent maps to different tokens at different spacings, and the model has to learn
+that equivalence rather than being handed it. Storing a derived `is_hopo` instead would
+be a cleaner representation. Irrelevant while forced flags are ~0.1% of notes.
+
+---
+
 ## Environment traps
 
 - The training interpreter is **`.venv313`** (torch 2.9.1+cu128, RTX 3060 Ti, 8 GB).
