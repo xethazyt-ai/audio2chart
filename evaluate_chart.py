@@ -27,6 +27,23 @@ called absent when the median chart matches humans, pattern vocabulary called
 human-level when the median chart is at chance, density called too low when it is 3.2x
 too high. Score several charts before saying anything about the model.
 
+NOR DOES A DELTA FROM THE MEDIAN MEAN MUCH ON ITS OWN. Twelve *human* charts from the
+tapping validation split, on these same measurements:
+
+    metric        median     human range
+    pct_chord      0.051     0.000 - 0.237
+    pct_tap        0.940     0.810 - 1.000
+    pct_sustain    0.010     0.000 - 0.084
+    nps           20.97      3.97  - 33.58
+    lift           0.518     0.308 - 0.614
+    rests/min     16.95      0.53  - 55.30
+
+Density spans 8x between human charts and phrasing spans 100x. A generated chart at
+10 NPS is half the median and squarely inside what humans do; one with 3 rests a minute
+is unusual but not outside the range. Read the ! flags as "look at this", not as
+"wrong", and weigh a metric by how tightly humans agree on it -- pct_tap is narrow and
+therefore informative, rests/min is not.
+
 *Does it follow the music?* Only with --audio. Note density against the onset
 envelope, which is meaningful in aggregate and noisy for one chart (per-song sd 0.284).
 """
