@@ -427,8 +427,24 @@ class WaveformTransformerDiscrete(L.LightningModule):
         self.train_accuracy = Accuracy(task="multiclass", num_classes=self.vocab_size)
         self.val_accuracy = Accuracy(task="multiclass", num_classes=self.vocab_size)
 
+        # Pad is ~86% of every target sequence, so predicting it everywhere already
+        # scores 86% accuracy -- hence down-weighting it, to stop the model taking that
+        # shortcut. But 0.1 overshoots badly into the opposite failure.
+        #
+        # At 0.1 the loss is 0.86 * 0.1 = 0.086 from pad positions against 0.14 * 1.0 =
+        # 0.14 from real notes, so notes dominate the objective roughly 62/38 while
+        # being 14% of the data. The model is then trained for *which note* and hardly
+        # at all for *note or silence*, and it shows: measured on both runs of
+        # 2026-09-11, two consecutive notes in the context collapse P(pad) from 0.90 to
+        # 0.09 and it never recovers, so generation saturates and never rests. Human
+        # tapping charts rest 15 times a minute; those models rest 0.35-0.85 times.
+        #
+        # Both runs showed it, including one that never saw the other's checkpoint, so
+        # it is produced here rather than inherited.
+        self.pad_class_weight = float(
+            OmegaConf.select(cfg_model, "pad_class_weight", default=0.1))
         self.class_weights = torch.ones(self.vocab_size)
-        self.class_weights[self.pad_token_id] = 0.1
+        self.class_weights[self.pad_token_id] = self.pad_class_weight
 
         self.save_hyperparameters()
 

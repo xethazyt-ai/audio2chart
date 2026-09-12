@@ -8,6 +8,18 @@ freeze_encoder: true
 # Declared here so it can be overridden normally -- reading it with a default is not
 # enough, Hydra refuses `model.input_noise=X` for a key the config does not define.
 input_noise: 0.0
+# Weight on the pad token in the cross-entropy loss.
+#
+# Pad is ~86% of targets. At 0.1 it contributes 0.086 of the loss against 0.14 from real
+# notes, so notes dominate 62/38 despite being 14% of the data -- the model learns which
+# note to play and not whether to play at all. Measured consequence on both 2026-09-11
+# runs: two notes in context collapse P(pad) 0.90 -> 0.09, generation saturates, and the
+# charts never rest.
+#
+# Declared here so it can be swept. Reading it with a default is not enough; Hydra
+# refuses `model.pad_class_weight=X` for a key the config does not define.
+pad_class_weight: 0.1
+
 # A local checkpoint to take weights from, with a fresh optimizer.
 # Unlike trainer.resume_path this does not restore the step count, so a
 # checkpoint taken past max_steps can still seed a new run.
