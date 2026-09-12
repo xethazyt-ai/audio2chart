@@ -176,9 +176,39 @@ to it; rests are *exactly zero* at every setting, against a human 15.1 a minute.
 model fills about 71% of all grid slots at the shipped defaults. Sampling moves density
 (71 -> 47) but not phrasing, so this is structural, not a knob that was set wrong.
 
-That is the signature of autoregressive drift: teacher-forced the pad false-positive rate
-sits at 0.03-0.13, and generating it saturates and never recovers. `input_noise=0.08` was
-meant to blunt exactly this and evidently did not blunt it enough.
+Two separate faults, measured apart. Teacher-forced on real history the model predicts
+pad 79.3% of the time against the data's ~86% (`val/pad_pred_rate` 0.793, pad true
+positives 0.936). Generating, it emits pad about 29% of the time. So most of the damage
+happens at generation, but not all of it.
+
+Density of the generated chart by position inside a 15 s chunk, 100 ms bins, as a share
+of the 10 grid slots each bin contains:
+
+    first 300 ms   4.9/10
+    300-1000 ms    6.5/10
+    1-2 s          7.3/10
+    plateau        7-8/10
+    human          ~1.4/10
+
+**The prior is wrong before drift can start.** At the first token the context is nothing
+but bos and the audio, and it already fills 54% of slots against a human 14% -- roughly
+four times too dense with no opportunity to have drifted yet. Class weighting or a pad
+prior is the lever there, not scheduled sampling.
+
+**Then it drifts, and locks in fast.** Density climbs from 54% to about 75% over roughly
+130 tokens and stays. That is self-reinforcing: a dense history tells the model it is in
+a dense passage. `input_noise=0.08` was aimed at this and is clearly not enough.
+
+A caution about how this was measured, because the first attempt got it backwards. Binned
+at 5 s, the profile reads 65.8 nps in the first third of a chunk against 52.0 in the last
+-- ratio 0.79, which looks like *no* accumulation and briefly seemed to refute the drift
+reading. Saturation completes inside the first bin, so that test could not see it. Use
+100 ms bins over the first two seconds, not thirds of a chunk.
+
+The rests figure is the starkest number here: the longest gap anywhere in 60 s of output
+is 0.040 s, and the median gap is 0.0099 s -- one grid step. The model does not pause at
+all, ever, while human tapping charts rest for a quarter second or more about fifteen
+times a minute.
 
 Note what this is *not*: evaluate_chart's docstring predicted the opposite failure -- zero
 chords, zero taps, almost no sustains at the shipped defaults. That is not what this
