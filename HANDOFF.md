@@ -125,6 +125,25 @@ The falsifiable question for scoring: the model learned note spacing in position
 fine-tuning. If it did not, note density comes out around double and the inter-onset
 histogram clusters at half the right intervals.
 
+**1500 steps is more than this subset supports.** Run A's non-pad accuracy:
+
+| step | train | val |
+|---|---|---|
+| 542 | 0.634 | 0.648 |
+| ~700 | 0.660 | **0.660** |
+| ~890 | 0.667 | 0.650 |
+| ~1070 | 0.672 | 0.639 |
+
+Train keeps climbing while val peaked around step 692 and fell twice after; the gap went
+0.000 → 0.033. That is overfitting onset on 1447 songs, not a plateau. EarlyStopping
+(patience 5 on val/acc_nonpad_epoch) would catch it, but max_steps arrives at about the
+same time.
+
+Score `best-checkpoint.ckpt`, never `last.ckpt` — the monitored checkpoint holds the val
+peak and the final weights are past it. A shorter run or a lower learning rate is the
+next thing to try; Run B was left on the identical config so the A/B comparison stays
+valid.
+
 ---
 
 ## Two tools were silently broken
