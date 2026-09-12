@@ -151,6 +151,46 @@ val/acc_nonpad_epoch, so it tracks the peak wherever the peak lands.
 
 ---
 
+## What the model actually produces (probe, one song)
+
+Run A's best checkpoint, generating over a 60 s validation clip, scored against the
+tapping baseline. Three sampling settings, to separate a sampling artifact from a
+property of the model:
+
+| setting | nps | rests/min | pattern lift | coverage |
+|---|---|---|---|---|
+| default (t 0.5, top_k 32) | 71.26 | **0.0** | +0.579 | 0.840 |
+| pad-bias 0.4 | 69.30 | **0.0** | +0.684 | 0.960 |
+| t 1.0, top_k 128, pad-bias 2 | 46.66 | **0.0** | +0.538 | 0.804 |
+| **human tapping** | **21.01** | **15.1** | +0.416 | ~0.68 |
+
+Two things, and they point in opposite directions.
+
+**The pattern vocabulary is good.** Catalogue coverage 0.80-0.96 against a chance floor
+around 0.27, lift at or above the human median in all three settings. Whatever else is
+wrong, the model is producing real charting shapes, not noise. That is the thing the
+catalogue work was for and it appears to have landed.
+
+**It does not know when to stop.** Density runs 2.2x to 3.4x human and never comes down
+to it; rests are *exactly zero* at every setting, against a human 15.1 a minute. The
+model fills about 71% of all grid slots at the shipped defaults. Sampling moves density
+(71 -> 47) but not phrasing, so this is structural, not a knob that was set wrong.
+
+That is the signature of autoregressive drift: teacher-forced the pad false-positive rate
+sits at 0.03-0.13, and generating it saturates and never recovers. `input_noise=0.08` was
+meant to blunt exactly this and evidently did not blunt it enough.
+
+Note what this is *not*: evaluate_chart's docstring predicted the opposite failure -- zero
+chords, zero taps, almost no sustains at the shipped defaults. That is not what this
+checkpoint does. The docstring describes an older checkpoint and should not be trusted
+for this one.
+
+**One song.** The rests=0 result is consistent across three settings, but all three are
+the same clip. The 6-chart scoring run is what decides whether it generalises, and no
+conclusion here should be repeated until it does.
+
+---
+
 ## Two tools were silently broken
 
 **`fit_tier.py` had never run.** `main()` read `args.min_tier`; `parse_args` never declared
