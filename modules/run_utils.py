@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
@@ -18,7 +19,7 @@ from lightning.pytorch.loggers import CSVLogger
 from lightning.pytorch.plugins.io import TorchCheckpointIO
 from omegaconf import DictConfig, OmegaConf
 
-from modules.utils_train import LogGradientNorm
+from modules.utils_train import LogGradientNorm, WatchPadCollapse
 
 
 logger = logging.getLogger(__name__)
@@ -41,6 +42,17 @@ class DirectCheckpointIO(TorchCheckpointIO):
 
     MINIMUM_BYTES = 1 << 20
 
+    # A checkpoint here is ~2.42 GB. Refuse to start a write without room for three, so
+    # the run stops with a clear message instead of dying mid-write.
+    #
+    # This is not hypothetical. trainer.log_dir was pointed at C: on 2026-09-12 for the
+    # write speed -- 704 MB/s against 108 MB/s on the corpus drive -- and five runs of
+    # checkpoints filled a 464 GB system drive to 7 MB free. The run then died inside
+    # torch.save, and the cleanup `unlink` raised PermissionError on the locked .partial,
+    # which *replaced* the original exception: the traceback said the file was in use by
+    # another process and said nothing at all about the disk being full.
+    REQUIRED_HEADROOM_BYTES = 3 * 2_500_000_000
+
     def save_checkpoint(self, checkpoint: dict[str, Any], path, storage_options=None) -> None:
         if storage_options is not None:
             raise TypeError(
@@ -48,6 +60,15 @@ class DirectCheckpointIO(TorchCheckpointIO):
             )
         destination = Path(path)
         destination.parent.mkdir(parents=True, exist_ok=True)
+
+        free = shutil.disk_usage(destination.parent).free
+        if free < self.REQUIRED_HEADROOM_BYTES:
+            raise RuntimeError(
+                f"Refusing to write {destination}: only {free / 1e9:.1f} GB free on that "
+                f"drive and a checkpoint is ~2.4 GB. Free space or point trainer.log_dir "
+                f"somewhere with room."
+            )
+
         temporary = destination.with_name(destination.name + ".partial")
         try:
             torch.save(checkpoint, temporary)
@@ -56,7 +77,13 @@ class DirectCheckpointIO(TorchCheckpointIO):
                 raise RuntimeError(f"Checkpoint write produced only {written} bytes")
             os.replace(temporary, destination)
         except BaseException:
-            temporary.unlink(missing_ok=True)
+            # Never let cleanup mask the real failure. On Windows the temporary can still
+            # be locked by the very write that just failed, and an exception raised here
+            # replaces the one actually worth reading.
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError as cleanup_error:
+                logger.warning("Could not remove %s: %s", temporary, cleanup_error)
             raise
         logger.info("Wrote checkpoint %s (%.2f GB)", destination, written / 1e9)
 
@@ -74,10 +101,16 @@ def configure_logging(level: str) -> None:
 def _log_dir(config: DictConfig) -> str:
     """Where checkpoints and CSV metrics are written.
 
-    Keep this off the drive holding the songs. A checkpoint here is 2.42 GB, and the
-    corpus drive measures 108 MB/s against 704 MB/s on the system drive -- 23 s versus
-    3.4 s per write on an idle disk, and worse than that during training, because the
-    dataloader is reading audio from the same spindle the write is saturating.
+    Needs room before speed. A checkpoint is 2.42 GB and a run writes about eight of
+    them.
+
+    This docstring used to say to keep it off the corpus drive, on the grounds that G:
+    runs at 108 MB/s against C:'s 704 MB/s and the dataloader reads audio from G:. That
+    was mostly wrong: the profiler puts the entire dataloader at 0.1% of a step, so the
+    contention hardly exists, and the real throughput fix was writing checkpoints less
+    often. Following the old advice filled a 464 GB system drive to 7 MB free and killed
+    a run mid-write, which cost far more than the 2.6 minutes per run the slower drive
+    costs.
     """
     return str(OmegaConf.select(config, "trainer.log_dir", default="lightning_logs"))
 
@@ -111,6 +144,8 @@ def build_callbacks(config: DictConfig, monitor: str, mode: str = "max") -> list
             mode=mode,
         ),
         LogGradientNorm(),
+        # Teacher-forced metrics cannot see the failure this watches for.
+        WatchPadCollapse(),
     ]
     if config.trainer.save_run:
         callbacks.append(L.pytorch.callbacks.ModelCheckpoint(

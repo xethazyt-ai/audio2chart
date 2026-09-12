@@ -55,6 +55,86 @@ class LogGradientNorm(L.pytorch.callbacks.Callback):
         trainer.lightning_module.log("train/grad_norm", torch.linalg.vector_norm(torch.stack(norms)))
 
 
+# What the corpus says P(pad) should be after k consecutive notes, measured over 400
+# tapping charts and 8.9M grid slots at grid_ms 10. See pad_response.py.
+DATA_PAD_AFTER = {1: 0.9645, 2: 0.7510, 4: 0.4076, 8: 0.1728}
+DATA_PAD_ALTERNATING = 0.9261
+
+
+class WatchPadCollapse(L.pytorch.callbacks.Callback):
+    """Log whether the model can still choose silence, every validation.
+
+    This is the fault that cost two full training runs and eighty minutes of chart
+    scoring to find on 2026-09-11, and it was visible after three hundred steps. The
+    model predicted pad correctly when teacher-forced -- val/pad_pred_rate sat at a
+    healthy 0.79 -- while being unable to emit it when generating: two notes in its own
+    context dropped P(pad) from 0.90 to 0.09, and after an ordinary alternating
+    note/pad history it fell to 0.0000 against a corpus value of 0.926.
+
+    No metric being logged could see that, because every one of them is teacher-forced.
+    Accuracy, loss, even pad_pred_rate are all conditioned on a *correct* history, and
+    the failure is entirely about what happens when the history is the model's own.
+
+    So this feeds the model synthetic histories -- k consecutive notes, and an
+    alternating note/pad run -- and logs the resulting P(pad). It costs a handful of
+    forward passes on one already-loaded validation batch.
+
+    Read `diag/pad_alternating` first. If it is near zero the model cannot produce a
+    chart that rests, whatever the sampler does, and the run is not worth finishing.
+    """
+
+    NOTE_TOKEN = 100
+
+    def __init__(self, lengths: tuple[int, ...] = (1, 2, 4, 8)):
+        super().__init__()
+        self.lengths = lengths
+        self._done_this_epoch = False
+
+    def on_validation_epoch_start(self, *_: Any, **__: Any) -> None:
+        self._done_this_epoch = False
+
+    def on_validation_batch_end(self, trainer: L.Trainer, module: Any, outputs: Any,
+                                batch: Any, batch_idx: int, *_: Any) -> None:
+        if self._done_this_epoch or batch_idx != 0:
+            return
+        self._done_this_epoch = True
+        try:
+            self._probe(module, batch)
+        except Exception as error:          # never let a diagnostic kill a run
+            logger.warning("Pad-collapse probe failed: %s", error)
+
+    def _probe(self, module: Any, batch: dict) -> None:
+        audio, padding_mask, input_tokens, *_ = module._extract_batch(batch)
+        with torch.no_grad():
+            codes = module._encode_audio(audio[:1], padding_mask[:1])
+            # The sequence's own first token is bos. Taking it from the batch avoids
+            # deriving it from the vocabulary layout, which the training module does not
+            # carry -- it holds pad and eos but no bos, and inferring bos = eos - 1 would
+            # silently break the moment the tokenizer is rearranged.
+            prefix = input_tokens[:1, :1]
+
+            def pad_probability(history: list[int]) -> float:
+                tokens = torch.cat([
+                    prefix,
+                    torch.tensor([history], dtype=torch.long, device=prefix.device),
+                ], dim=1) if history else prefix
+                logits = module.transformer(tokens, codes)[:, -1, :].float()
+                return torch.softmax(logits, dim=-1)[0, module.pad_token_id].item()
+
+            for count in self.lengths:
+                value = pad_probability([self.NOTE_TOKEN] * count)
+                module.log(f"diag/pad_after_{count}_notes", value)
+                reference = DATA_PAD_AFTER.get(count)
+                if reference is not None:
+                    module.log(f"diag/pad_after_{count}_gap", reference - value)
+
+            alternating = [self.NOTE_TOKEN if index % 2 == 0 else module.pad_token_id
+                           for index in range(16)]
+            value = pad_probability(alternating)
+            module.log("diag/pad_alternating", value)
+            module.log("diag/pad_alternating_gap", DATA_PAD_ALTERNATING - value)
+
+
 def _validate_policy(error_policy: str) -> None:
     if error_policy not in ERROR_POLICIES:
         raise ValueError(f"error_policy must be one of {sorted(ERROR_POLICIES)}")
