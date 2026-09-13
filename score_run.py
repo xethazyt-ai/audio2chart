@@ -11,6 +11,12 @@ charts. One chart characterises nothing: across eight from this model, sustains 
 0.000 to 0.655 and pattern lift -0.172 to +0.383, and a day of conclusions drawn from a
 single chart had to be retracted.
 
+*Does it follow the music?* Responsiveness on every chart: note density against the
+audio onset envelope. Measured on this corpus, ten human charts give a median +0.249
+and the same notes scattered at random give -0.041, so the metric does discriminate.
+But the human range is -0.547 to +0.717, so it means something across several charts
+and nothing at all on one.
+
 *Did it adapt to the new grid?* The model learned note spacing in position units at
 20 ms. At 10 ms every rhythm it knew is wrong by exactly 2x. That should wash out in
 fine-tuning, but it is a falsifiable claim: if it did not, note density comes out around
@@ -135,12 +141,15 @@ def main():
         path = work / f"chart{len(written)}" / "notes.chart"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
-        written.append(path)
+        # Keep the clip beside the chart. Responsiveness -- does note density
+        # follow the music -- needs it, and it is the only measure here that a
+        # model ignoring the audio entirely cannot fake.
+        written.append((path, clip))
 
     print(f"\n-- what do its charts look like? ({len(written)} charts) --")
-    for path in written:
+    for path, clip in written:
         subprocess.run([sys.executable, str(ROOT / "evaluate_chart.py"), str(path),
-                        "--baseline", args.baseline])
+                        "--baseline", args.baseline, "--audio", str(clip)])
 
 
 if __name__ == "__main__":
