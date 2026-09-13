@@ -1,5 +1,66 @@
 # audio2chart — session handoff
 
+## Where this stands (2026-09-13)
+
+**The model now charts like a human on every aggregate measured.** One line in the loss
+was the whole problem.
+
+`modules/trainer.py` weighted the pad token at 0.1 while pad is 86% of every target
+sequence. Its share of the objective was 0.86 x 0.1 = 0.086 against 0.14 for real notes,
+so **notes dominated the loss 62/38 while being 14% of the data**, and the model was
+trained for *which note* and barely at all for *note or silence*. It is now
+`model.pad_class_weight`, and at 1.0:
+
+| | w=0.1 | **w=1.0 @ t=1.0** | human |
+|---|---|---|---|
+| nps, median of 6 | 59.97 | **23.39** | **21.01** |
+| rests/min, median | 0.85 | **15.35** | **15.10** |
+| pattern lift, median | 0.61 | **0.45** | **0.42** |
+| audio ablation | +0.8%, 14/20 | **+1.0%, 16/20** | — |
+
+Per-chart spread sits inside the human range as well: rests 7.4-24.1 against a human
+0.53-55.3, nps 12.4-34.9 against 3.97-33.58.
+
+Conditioning improved as a side effect. A model locked in a saturated autoregressive loop
+cannot attend to anything else; breaking the loop freed it to use the audio, and 17 of 20
+batches hurt by an audio swap is p about 0.001 where 14 of 20 was marginal.
+
+**Two of the three changes were to measurement, not to the model:**
+
+- calibration must be judged on **raw** probabilities, not temperature-scaled ones. The
+  verdict compared a scaled model value against a raw corpus frequency and reported a
+  well-calibrated checkpoint as broken.
+- **sampling temperature 0.5 is wrong now.** It was tuned against the collapsed
+  checkpoint. Sharpening makes a calibrated model bistable -- it locks into playing or
+  into silence. At 0.5 this checkpoint plays 479 notes in fifteen seconds then goes quiet
+  for forty-five; at 1.0 it rests normally. `score_run` and any future default should use
+  1.0.
+
+### What is still not right
+
+- **Audio conditioning is real but weak.** +1.0% on note positions is significant, not
+  large. The model writes human-looking charts; how much they are about *this song* is the
+  open question and the next thing worth attacking.
+- Density is 11% high and rests are at the human median but with wider per-chart spread
+  than ideal.
+- 8 ms at a 12 s window is still free data (97.0% -> 98.8% usable windows at the same 1502
+  tokens) and has not been taken.
+
+### Run it like this
+
+    model.pad_class_weight=1.0        # not 0.1
+    generate --temperature 1.0        # not 0.5
+    loader.val_num_pieces=4           # 1 made checkpoint selection noise-driven
+    trainer.log_dir=G:/a2c_runs       # C: filled to 7 MB free
+
+Check `diag/pad_alternating_ratio` in metrics.csv at the first validation. If silence is
+an order of magnitude below the corpus the run will not produce a usable chart and is not
+worth finishing -- that was visible at 300 steps and previously took two full runs and
+eighty minutes of scoring to notice.
+
+---
+
+
 Updated 2026-09-11 evening. **Supersedes everything in this file before today**, which
 was written 2026-09-05 and said "Nothing is running. No checkpoint exists." Both are now
 false. `MORNING.md` covers the grid change in more depth and is still accurate; this file
