@@ -136,30 +136,46 @@ def main() -> None:
         print(f"  {f'{count} pads':<28}{raw:>10.4f}{hot:>12.4f}")
 
     print()
-    alternating_values = {}
+    alternating_raw = {}
     for count in sorted(DATA_ALTERNATING):
         history = [args.note if index % 2 == 0 else pad_id for index in range(count)]
         raw, hot = probability(history)
-        alternating_values[count] = hot
+        alternating_raw[count] = raw
         print(f"  {f'{count} alternating':<28}{raw:>10.4f}{hot:>12.4f}"
               f"{DATA_ALTERNATING[count]:>10.4f}")
 
-    # Judge against the corpus, as a ratio, rather than against a fixed threshold: the
-    # right answer differs by an order of magnitude between these rows.
-    _, two_notes = probability([args.note] * 2)
-    short = alternating_values[4] / DATA_ALTERNATING[4]
-    long_run = alternating_values[32] / DATA_ALTERNATING[32]
+    # Judge the RAW column against the corpus, not the temperature-scaled one.
+    #
+    # An earlier version compared the t=0.5 value against a corpus frequency, which is
+    # apples to oranges: the corpus number is a plain rate, and temperature reshapes the
+    # distribution before anything is sampled. It made a well-calibrated checkpoint read
+    # as WEAK -- its raw alternating-32 was 0.066 against a corpus 0.050, i.e. slightly
+    # *over*, while the t=0.5 value of 0.0074 looked like a 7x shortfall.
+    #
+    # Calibration and sampling are separate questions and this tool answers the first.
+    # What the sampler then does with a correct distribution is reported below it, because
+    # sharpening a small probability makes it very small: at pad_class_weight=1.0 the
+    # model rests 5.0 times a minute at temperature 1.0 and not once at 0.5.
+    raw_two, hot_two = probability([args.note] * 2)
+    ratios = {count: alternating_raw[count] / DATA_ALTERNATING[count]
+              for count in alternating_raw}
+    worst = min(ratios.values())
+    two_ratio = raw_two / DATA_AFTER_NOTES[2]
     print()
-    print(f"  alternating-4 is {short:.2f}x the corpus, alternating-32 is {long_run:.2f}x,"
-          f" P(pad) after two notes {two_notes / DATA_AFTER_NOTES[2]:.2f}x")
-    if short < 0.1 or two_notes < 0.1 * DATA_AFTER_NOTES[2]:
+    print("  calibration against the corpus (raw, before any sampling):")
+    print(f"    after two notes {two_ratio:.2f}x, alternating "
+          + ", ".join(f"{count}:{ratio:.2f}x" for count, ratio in sorted(ratios.items())))
+    if worst < 0.1 or two_ratio < 0.1:
         print("  FAIL: silence is an order of magnitude less likely than the corpus says.")
         print("        Expect saturated output that never rests.")
-    elif short < 0.5 or long_run < 0.5:
+    elif worst < 0.5 or two_ratio < 0.5:
         print("  WEAK: silence is suppressed but not absent. Expect over-dense output,")
         print("        worse the longer the model has been playing.")
     else:
-        print("  OK: silence tracks the corpus. Density should be controllable.")
+        print("  OK: silence tracks the corpus. Density is a sampling question now --")
+        print(f"       note temperature 0.5 turns P(pad)={raw_two:.3f} into {hot_two:.3f}"
+              " after two notes,")
+        print("       so a sharpened sampler can still suppress rests the model would take.")
 
 
 if __name__ == "__main__":
