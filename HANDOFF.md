@@ -419,6 +419,75 @@ be a cleaner representation. Irrelevant while forced flags are ~0.1% of notes.
 
 ---
 
+## The cause, and what moves it (2026-09-12)
+
+`modules/trainer.py` weighted the pad token at 0.1 in the cross-entropy loss while pad is
+86% of all targets. Its share of the objective was therefore 0.86 x 0.1 = 0.086 against
+0.14 for real notes: **notes dominated the loss 62/38 while being 14% of the data**, and
+the model was trained for *which note* and barely at all for *note or silence*.
+
+That predicts exactly the two things measured — pattern vocabulary above human, density
+3.4x human with no rests. It is now `model.pad_class_weight`.
+
+Dose-response, P(pad) at temperature 0.5 after a note history:
+
+| history | w=0.1 | w=0.35 | w=1.0 | corpus |
+|---|---|---|---|---|
+| 2 notes | 0.092 | 0.340 | **0.816** | 0.751 |
+| 4 notes | 0.004 | 0.011 | 0.100 | 0.408 |
+| alternating-4 | 0.003 | 0.038 | **0.280** | 0.398 |
+| 32 notes | 0.004 | 0.245 | 0.636 | 0.008 |
+
+Monotonic, which settles the mechanism. w=1.0 lands the two-note case and still
+overshoots the dense regime badly — after 32 consecutive notes it wants to stop, where the
+corpus says 0.008 — but that reading is from a run that died at step 150 and may not be
+converged. A full-length w=1.0 run is in flight.
+
+### A measurement error worth not repeating
+
+The alternating reference was 0.9261 for a while, and it was wrong. It had been measured
+on histories ending in a **note** while the probe builds histories ending in a **pad** —
+"does the alternation continue" (93%) against "does this gap extend" (5-40%), opposite
+questions. It made every checkpoint look about ten times worse on those rows and produced
+a flat FAIL verdict. Correct values, matched to the probe's own lengths: 0.398 at four
+slots, 0.199 at eight, 0.110 at sixteen, 0.050 at thirty-two. P(pad) falls steeply with
+how long the alternation has run, because a long regular passage is a dense one, so no
+single figure could ever have been right.
+
+It then took a second commit to fix, because the same wrong constant had been copied into
+`WatchPadCollapse`. Check for duplicates of a constant before believing it is fixed.
+
+### Watch this during training, not after
+
+`WatchPadCollapse` logs `diag/pad_after_k_notes` and `diag/pad_alternating_ratio` at every
+validation. It exists because **every other metric here is teacher-forced** — accuracy,
+loss, and `pad_pred_rate` are all conditioned on a correct history, and this fault is
+entirely about what happens when the history is the model's own. `val/pad_pred_rate` read
+a healthy 0.79 through two complete runs in which the model could not rest.
+
+The fault was visible at 300 steps. It cost two full runs and eighty minutes of chart
+scoring to find.
+
+---
+
+## Operational notes from the same day
+
+**Do not run corpus scans while training.** Measured on the same run, same minute: 6.0
+optimizer steps per minute with analysis scripts running against 10.0 without. The six
+dataloader workers need the CPU.
+
+**`nvidia-smi` utilization lies.** It reports whether any kernel ran in a sampling window,
+not how full the device is. During the slow stretch it read 100% while
+`clocks_throttle_reasons.active` was `0x1` (GpuIdle), power draw 74 W of 265 W and the SM
+clock 780 MHz of 2100. Query power, clocks and throttle reasons -- utilization alone has
+now been misleading twice.
+
+**C: filled to 7 MB free** because checkpoints were pointed there. Everything project-owned
+now lives on G:, `save_checkpoint` refuses to start without three checkpoints of headroom,
+and its cleanup no longer raises over the original exception.
+
+---
+
 ## Environment traps
 
 - The training interpreter is **`.venv313`** (torch 2.9.1+cu128, RTX 3060 Ti, 8 GB).

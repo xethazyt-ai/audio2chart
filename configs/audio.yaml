@@ -78,7 +78,17 @@ loader:
   batch_size: 1
   train_num_pieces: 2
   val_batch_size: 1
-  val_num_pieces: 1
+  # Four windows per song rather than one. The monitored metric decides which weights are
+  # kept as "best", and at one window per song it was too noisy to decide anything:
+  # val/acc_nonpad_epoch swung +/-0.013 around 0.653 across consecutive validations, which
+  # on a 100-window sample is what sampling noise alone produces. A run was read as
+  # overfitting on the strength of three such points and the next one made a new high.
+  #
+  # This is the cheap way to fix it. limit_val_batches would need four times the song
+  # loads for the same number of windows; num_pieces takes four windows from each song
+  # already being read, so the extra cost is compute rather than disk, and validation runs
+  # under no_grad so the memory is smaller than a training batch of the same shape.
+  val_num_pieces: 4
   num_workers: 6
   # Audio cache budget per dataloader, divided among its workers. The 20 GB default
   # becomes 40 GB during validation, because persistent_workers keeps the training
