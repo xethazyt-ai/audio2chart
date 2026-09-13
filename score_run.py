@@ -46,6 +46,13 @@ def parse_args():
                              "against 7.8).")
     parser.add_argument("--label", default=None)
     parser.add_argument("--charts", type=int, default=6)
+    parser.add_argument("--temperature", type=float, default=1.0,
+                        help="Default was 0.5, tuned against a checkpoint whose P(pad) "
+                             "had collapsed. A calibrated model is bistable under that "
+                             "sharpening -- it locks into playing or into silence: at 0.5 "
+                             "one such checkpoint played 479 notes in 15 s then went "
+                             "quiet for 45. At 1.0 it rests 5.0 times a minute.")
+    parser.add_argument("--top_k", type=int, default=32)
     parser.add_argument("--export-to", type=Path, default=None)
     parser.add_argument("--config", type=Path,
                         default=Path(r"G:\a2c_data\export\config.json"))
@@ -107,7 +114,8 @@ def main():
                            "-ar", "24000", "-ac", "1", str(clip)]).returncode:
             continue
         torch.manual_seed(len(written))
-        sequence = torch.cat(model.generate(str(clip), temperature=0.5, top_k=32,
+        sequence = torch.cat(model.generate(str(clip), temperature=args.temperature,
+                                            top_k=args.top_k,
                                             max_parallel_chunks=4)).flatten().cpu().tolist()
         torch.cuda.empty_cache()
         times = [i * grid for i in range(len(sequence))]
