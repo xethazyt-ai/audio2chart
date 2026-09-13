@@ -11,38 +11,48 @@ so **notes dominated the loss 62/38 while being 14% of the data**, and the model
 trained for *which note* and barely at all for *note or silence*. It is now
 `model.pad_class_weight`, and at 1.0:
 
-| | w=0.1 | **w=1.0 @ t=1.0** | human |
-|---|---|---|---|
-| nps, median of 6 | 59.97 | **23.39** | **21.01** |
-| rests/min, median | 0.85 | **15.35** | **15.10** |
-| pattern lift, median | 0.61 | **0.45** | **0.42** |
-| audio ablation | +0.8%, 14/20 | **+1.0%, 16/20** | — |
+| | w=0.1 | w=1.0, 1500 | **w=1.0, 3000** | human |
+|---|---|---|---|---|
+| nps, median of 6 | 59.97 | 23.39 | **23.12** | **21.01** |
+| rests/min, median | 0.85 | 15.35 | **17.25** | **15.10** |
+| pattern lift, median | 0.61 | 0.45 | **0.41** | **0.42** |
+| responsiveness, median | — | — | **+0.133** | **+0.249** |
+| audio ablation, notes | +0.8%, 14/20 | +1.0%, 16/20 | +1.5%, 14/20 | — |
 
-Per-chart spread sits inside the human range as well: rests 7.4-24.1 against a human
+Per-chart spread sits inside the human range too: rests 7.4-24.1 against a human
 0.53-55.3, nps 12.4-34.9 against 3.97-33.58.
 
-Conditioning improved as a side effect. A model locked in a saturated autoregressive loop
-cannot attend to anything else; breaking the loop freed it to use the audio, and 17 of 20
-batches hurt by an audio swap is p about 0.001 where 14 of 20 was marginal.
+**It follows the music.** Responsiveness -- note density against the audio onset envelope
+-- is positive on every one of six charts: -0.003, +0.018, +0.145, +0.132, +0.302, +0.133.
+Randomly scattered notes score -0.041 on this corpus and human charts +0.249, so the model
+sits about half way to human and clearly above chance. That is the one measure here a
+model ignoring the audio could not fake.
 
-**Two of the three changes were to measurement, not to the model:**
+A single chart from the 1500-step model scored -0.400 on the same measure and looked like
+evidence of anti-correlation. It was not: the human range across ten charts is -0.547 to
++0.717, so one chart could never have shown it, and six charts from the next checkpoint
+came out positive. Do not read this metric off one chart.
 
-- calibration must be judged on **raw** probabilities, not temperature-scaled ones. The
-  verdict compared a scaled model value against a raw corpus frequency and reported a
-  well-calibrated checkpoint as broken.
-- **sampling temperature 0.5 is wrong now.** It was tuned against the collapsed
-  checkpoint. Sharpening makes a calibrated model bistable -- it locks into playing or
-  into silence. At 0.5 this checkpoint plays 479 notes in fifteen seconds then goes quiet
-  for forty-five; at 1.0 it rests normally. `score_run` and any future default should use
-  1.0.
+**More training helped, and the loss change cost nothing.** Doubling to 3000 steps put
+pattern lift on the human figure exactly (0.41 against 0.416) and took alternating silence
+to 0.96x the corpus. `val/acc_nonpad` also recovered from 0.607 at 1500 steps to 0.663 --
+above what the broken weight-0.1 model reached -- so the apparent accuracy cost of
+reweighting pad was undertraining, not a real trade.
+
+**It now slightly over-rests**: 17.25 rests a minute against a human 15.10, and P(pad)
+after two notes is 0.863 against a corpus 0.751. Mild over-resting is a much better
+failure than the original, but a pad weight a little under 1.0 is the knob if it matters.
 
 ### What is still not right
 
-- **Audio conditioning is real but weak.** +1.0% on note positions is significant, not
-  large. The model writes human-looking charts; how much they are about *this song* is the
-  open question and the next thing worth attacking.
-- Density is 11% high and rests are at the human median but with wider per-chart spread
-  than ideal.
+- **Audio conditioning is real but modest.** The ablation gives +1.5% on note positions
+  hurting 14 of 20 batches, which is marginal on its own, and responsiveness is +0.133
+  against a human +0.249. The model does attend to the music; it attends about half as
+  much as a human charter does. This is the largest remaining gap and the next thing
+  worth attacking -- `model.transformer.audio_drop` is 0.0, and raising it would train
+  the model to handle missing audio, which is what classifier-free guidance needs and the
+  engine's `--guidance` flag already implements.
+- Slight over-resting, 17.25 a minute against 15.10.
 - 8 ms at a 12 s window is still free data (97.0% -> 98.8% usable windows at the same 1502
   tokens) and has not been taken.
 
