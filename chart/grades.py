@@ -59,7 +59,11 @@ PATTERN_GRADES: dict[str, tuple[float, int]] = {
     'trip chimney G-R-B, Y peak': (2.86, 241),
     'trill adjacent R-G': (2.85, 13431),
     'trill 1-split Y-G': (2.85, 6133),
-    'triangle slide 8-note': (2.84, 595),
+    # Was 'triangle slide 8-note'. That name held the identical sequence to
+    # 'sweep 8-note' and has been removed from the catalogue as misfiled, so these
+    # 595 occurrences belong to the surviving name -- they are occurrences of the
+    # shape, and only ever got this label because it matched first.
+    'sweep 8-note': (2.84, 595),
     'ladder triplet step desc': (2.83, 441),
     'quad asc gapped G-R-B-O': (2.81, 477),
     'triangle slide 6-note': (2.80, 3004),

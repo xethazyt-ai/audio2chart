@@ -1,7 +1,8 @@
 import unittest
 
 from chart.catalogue import (
-    CATALOGUE, body_signature, collisions, parse, signature, signatures, split_transition,
+    CATALOGUE, body_signature, collisions, parse, positions, signature, signatures,
+    split_transition,
 )
 
 
@@ -43,10 +44,23 @@ class CatalogueTest(unittest.TestCase):
         self.assertEqual((), parse(text))
         self.assertEqual(3, len(positions(text)))
 
-    def test_known_duplicate_is_detected(self):
-        # triangle slide 8-note and sweep 8-note are the same literal sequence.
-        self.assertEqual(parse(CATALOGUE["triangle slide 8-note"]),
-                         parse(CATALOGUE["sweep 8-note"]))
+    def test_no_two_entries_hold_the_same_sequence(self):
+        """This used to assert the opposite, pinning a known duplicate in place.
+
+        'triangle slide 8-note' and 'sweep 8-note' both held 'G R Y B O B Y R', which
+        double-counted the shape in catalogue coverage. The triangle-slide one was
+        misfiled rather than an alias: the families differ at six notes, where a triangle
+        turns around on an interior peak (G R Y B Y R) and a sweep runs to the end of the
+        neck and back (G R Y B O B). The eight-note sequence reaches O, so it is a sweep.
+        """
+        import collections
+
+        bodies = collections.defaultdict(list)
+        for name, text in CATALOGUE.items():
+            bodies[tuple(positions(text))].append(name)
+        duplicates = {body: names for body, names in bodies.items() if len(names) > 1}
+        self.assertEqual({}, duplicates,
+                         f"entries sharing a sequence: {list(duplicates.values())}")
 
     def test_transposed_families_collide_as_expected(self):
         found = collisions()

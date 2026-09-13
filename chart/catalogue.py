@@ -137,7 +137,19 @@ CATALOGUE: dict[str, str] = {
     "cake 14-note": "O G O G O G R Y B O B Y R G",
     # --- slides and H ----------------------------------------------------------
     "triangle slide 6-note": "G R Y B Y R",
-    "triangle slide 8-note": "G R Y B O B Y R",
+    # "triangle slide 8-note" was here, holding "G R Y B O B Y R" -- the identical
+    # sequence to "sweep 8-note", which double-counted it in catalogue coverage.
+    #
+    # Removed rather than kept as an alias, because the two families are not the
+    # same thing and this entry was filed under the wrong one. What separates them
+    # shows at six notes: "triangle slide 6-note" is G R Y B Y R, turning around on
+    # an interior peak at B, while "sweep 6-note" is G R Y B O B, running to the end
+    # of the neck and back. The eight-note sequence reaches O, so it is a sweep by
+    # that distinction -- and it is exactly "sweep 12-note" truncated.
+    #
+    # A genuine eight-note triangle would need an interior peak, which nothing in
+    # the reference currently provides. Reinstate this under a shape that actually
+    # turns around early if one turns up.
     # Was written as single notes "G O Y B Y G O", which never occurred in 1,200
     # charts because an H is not a note sequence: two rails held across three hits with
     # the rung appearing only in the middle. Found in 8.9% of charts once searched for
