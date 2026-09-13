@@ -59,6 +59,12 @@ def parse_args():
                              "one such checkpoint played 479 notes in 15 s then went "
                              "quiet for 45. At 1.0 it rests 5.0 times a minute.")
     parser.add_argument("--top_k", type=int, default=32)
+    parser.add_argument("--guidance", type=float, default=0.0,
+                        help="Classifier-free-style guidance against a neighbouring "
+                             "chunk as the negative. Measured on three clips, 1.5 took "
+                             "responsiveness from -0.050 to +0.479 (human +0.249) and "
+                             "density from 9.0 to 21.3 nps (human 21.01). Costs a second "
+                             "decoder branch, hence max_parallel_chunks.")
     parser.add_argument("--export-to", type=Path, default=None)
     parser.add_argument("--config", type=Path,
                         default=Path(r"G:\a2c_data\export\config.json"))
@@ -121,7 +127,7 @@ def main():
             continue
         torch.manual_seed(len(written))
         sequence = torch.cat(model.generate(str(clip), temperature=args.temperature,
-                                            top_k=args.top_k,
+                                            top_k=args.top_k, guidance=args.guidance,
                                             max_parallel_chunks=4)).flatten().cpu().tolist()
         torch.cuda.empty_cache()
         times = [i * grid for i in range(len(sequence))]
